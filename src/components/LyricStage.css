@@ -1,0 +1,206 @@
+.lyrics {
+  position: relative;
+  flex: 1 1 auto;
+  min-block-size: 0;
+  padding-inline: var(--gutter) var(--gutter-end);
+
+  /* A real scroll container. The active line is brought to the focal point
+     with scrollTo() rather than a hand-computed transform, which keeps the
+     browser in charge of geometry and lets the reader scroll back by hand. */
+  overflow-y: auto;
+  overscroll-behavior: contain;    /* don't chain scrolling to the page */
+  scrollbar-width: none;           /* the progress hairline is the position cue */
+}
+
+.lyrics::-webkit-scrollbar { display: none; }
+
+.lyrics__notice {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--z-overlay);
+  padding-block: var(--s-4) var(--s-2);
+  color: var(--c-accent);
+}
+
+/* --- The reel ------------------------------------------------------------- */
+
+.lyrics__reel {
+  /* Enough room above and below that the first and last lines can still reach
+     the focal point instead of stopping short at the edge of the container. */
+  padding-block: 42vh 58vh;
+}
+
+/* --- A line --------------------------------------------------------------- */
+
+.lyrics__line {
+  display: block;
+  inline-size: 100%;
+  text-align: start;
+  padding-block: 0.18em;
+  max-inline-size: 20ch;     /* resolved at the lyric size, so roughly 20 chars */
+
+  font-family: var(--f-display);
+  font-size: var(--t-lyric);
+  line-height: var(--lh-lyric);
+  letter-spacing: var(--tr-lyric);
+  color: var(--c-fg);
+
+  font-variation-settings: 'wght' 380, 'wdth' 96;
+  transform-origin: left center;
+
+  /*
+   * Only opacity, transform and colour animate.
+   *
+   * font-variation-settings is deliberately NOT in this list. Animating the
+   * weight axis changes glyph widths, which rewraps the line and changes its
+   * height mid-transition — a genuine layout animation. It looked good and
+   * quietly broke scroll positioning, because the geometry kept moving after
+   * the scroll had been calculated. The weight now snaps while opacity and
+   * scale carry the transition.
+   */
+  transition:
+    opacity   var(--d-base) var(--e-out),
+    transform var(--d-base) var(--e-out),
+    color     var(--d-base) var(--e-out);
+}
+
+/* Distance from the active line drives the fade. Nearby lines stay readable so
+   you can see what is coming; distant ones recede to texture. */
+.lyrics__line[data-distance='0'] { opacity: 1;    transform: scale(1); }
+.lyrics__line[data-distance='1'] { opacity: 0.40; transform: scale(0.965); }
+.lyrics__line[data-distance='2'] { opacity: 0.24; transform: scale(0.95); }
+.lyrics__line[data-distance='3'] { opacity: 0.14; transform: scale(0.94); }
+.lyrics__line[data-distance='4'] { opacity: 0.08; transform: scale(0.94); }
+
+/* Lines already sung recede further than lines still to come. */
+.lyrics__line[data-past]:not([data-active]) { opacity: 0.16; }
+.lyrics__line[data-past][data-distance='1'] { opacity: 0.28; }
+
+.lyrics__line[data-active] {
+  font-variation-settings: 'wght' 800, 'wdth' 104;
+  color: var(--c-fg);
+}
+
+/* The accent marker: a short bar in the left gutter carried only by the active
+   line. It makes the current line unmistakable at a glance, and means the
+   highlight is not signalled by opacity alone. */
+.lyrics__line::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: calc(var(--gutter) * -1);
+  inline-size: calc(var(--gutter) * 0.42);
+  max-inline-size: 1.5rem;
+  block-size: 3px;
+  margin-block-start: 0.58em;
+  background: var(--c-accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--d-base) var(--e-out);
+}
+
+.lyrics__line[data-active]::before { transform: scaleX(1); }
+
+/* --- Clickable lines ------------------------------------------------------ */
+
+.lyrics__line--seek {
+  position: relative;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.lyrics__line--seek:hover { opacity: 0.7; }
+.lyrics__line--seek[data-active]:hover { opacity: 1; }
+
+.lyrics__line--seek:focus-visible {
+  outline: var(--ring) solid var(--c-accent);
+  outline-offset: 4px;
+}
+
+.lyrics__text { display: inline; }
+
+/* --- Instrumental gap ----------------------------------------------------- */
+
+.lyrics__rest {
+  display: flex;
+  gap: 0.5rem;
+  padding-block: 0.9em;
+  align-items: center;
+}
+
+.lyrics__rest span {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 50%;
+  background: var(--c-fg-ghost);
+  transition: background var(--d-base) var(--e-out);
+}
+
+.lyrics__rest[data-active] span {
+  background: var(--c-accent);
+  animation: rest-pulse 1.6s var(--e-out) infinite;
+}
+.lyrics__rest[data-active] span:nth-child(2) { animation-delay: 0.2s; }
+.lyrics__rest[data-active] span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes rest-pulse {
+  0%, 100% { opacity: 0.3; }
+  50%      { opacity: 1; }
+}
+
+/* --- Static mode ----------------------------------------------------------
+   When only unsynced lyrics exist there is no active line to follow, so every
+   line reads at the same legible weight and the user drives the scrolling. */
+
+.lyrics[data-mode='static'] .lyrics__reel {
+  padding-block: var(--s-8) 40vh;
+}
+
+.lyrics[data-mode='static'] .lyrics__line {
+  opacity: 0.82;
+  transform: none;
+  font-variation-settings: 'wght' 500, 'wdth' 100;
+  font-size: clamp(1.25rem, 3.2vw, 2.25rem);
+  max-inline-size: 28ch;
+}
+
+.lyrics[data-mode='static'] .lyrics__line::before { display: none; }
+
+/* --- Edge fades ----------------------------------------------------------- */
+
+.lyrics__fade {
+  position: absolute;
+  inset-inline: 0;
+  block-size: 18%;
+  pointer-events: none;
+  z-index: var(--z-overlay);
+}
+
+.lyrics__fade--top {
+  inset-block-start: 0;
+  background: linear-gradient(var(--c-bg) 12%, transparent);
+}
+
+.lyrics__fade--bottom {
+  inset-block-end: 0;
+  background: linear-gradient(transparent, var(--c-bg) 88%);
+}
+
+/* --- Responsive ----------------------------------------------------------- */
+
+@media (max-width: 599px) {
+  .lyrics { padding-inline: var(--s-4); }
+  .lyrics__line { max-inline-size: none; }
+  /* No room for a gutter marker on a phone: underline the active line instead. */
+  .lyrics__line::before {
+    inset-inline-start: 0;
+    inset-block-start: 100%;
+    margin-block-start: -0.3em;
+    inline-size: 2rem;
+    max-inline-size: 2rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lyrics__rest[data-active] span { animation: none; opacity: 1; }
+}

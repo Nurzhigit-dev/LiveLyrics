@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { Track } from '../types';
 import './TransportBar.css';
 
@@ -5,15 +6,17 @@ interface Props {
   track?: Track | null;
   /** Current position in the song, in seconds. */
   position?: number;
+  /** Controls rendered on the right, e.g. the sync stepper. */
+  actions?: ReactNode;
 }
 
 /** 214 -> "3:34". Padded so the digits never change width mid-song. */
 export function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '--:--';
   const total = Math.floor(seconds);
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return `${minutes}:${String(rest).padStart(2, '0')}`;
 }
 
 /**
@@ -23,9 +26,9 @@ export function formatTime(seconds: number): string {
  * arrives — the content swaps in place instead of the bar appearing from
  * nowhere and shoving the stage upward.
  */
-export function TransportBar({ track, position = 0 }: Props) {
+export function TransportBar({ track, position = 0, actions }: Props) {
   const duration = track?.duration ?? 0;
-  const pct = duration > 0 ? Math.min(100, (position / duration) * 100) : 0;
+  const pct = duration > 0 ? Math.min(100, Math.max(0, (position / duration) * 100)) : 0;
   const hasTrack = Boolean(track);
 
   return (
@@ -59,9 +62,12 @@ export function TransportBar({ track, position = 0 }: Props) {
           )}
         </div>
 
-        <span className="label readout transport__time">
-          {hasTrack ? `${formatTime(position)} / ${formatTime(duration)}` : '--:-- / --:--'}
-        </span>
+        <div className="transport__end">
+          <span className="label readout transport__time">
+            {hasTrack ? `${formatTime(position)} / ${formatTime(duration)}` : '--:-- / --:--'}
+          </span>
+          {actions}
+        </div>
       </div>
     </footer>
   );

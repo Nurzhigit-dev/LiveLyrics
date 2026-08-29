@@ -1,0 +1,86 @@
+.notice {
+  flex: 1 1 auto;
+  display: grid;
+  align-items: center;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: var(--s-7) var(--gutter-end) var(--s-7) var(--gutter);
+}
+
+.notice__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-4);
+  max-inline-size: 42rem;
+}
+
+.notice__kind {
+  color: var(--c-fg-mute);
+  padding-block-end: var(--s-3);
+  border-block-end: 1px solid var(--c-line-strong);
+  inline-size: 100%;
+}
+
+/* Tone is carried by an icon-free label plus the border colour, and the title
+   text always says what happened — colour is never the only signal. */
+.notice[data-tone='danger'] .notice__kind {
+  color: var(--c-danger);
+  border-block-end-color: var(--c-danger);
+}
+
+.notice__title {
+  font-size: clamp(1.75rem, 4.5vw, 3.25rem);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: var(--tr-lyric);
+  font-variation-settings: 'wght' 800, 'wdth' 104;
+  text-wrap: balance;
+  max-inline-size: 18ch;
+}
+
+.notice__detail {
+  font-size: clamp(0.9375rem, 1.1vw, 1.0625rem);
+  line-height: var(--lh-body);
+  color: var(--c-fg-mute);
+  max-inline-size: 52ch;
+}
+
+.notice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin-block-start: var(--s-3);
+}
+
+.notice__btn {
+  min-block-size: 3rem;
+  padding-inline: var(--s-5);
+  border-radius: var(--radius);
+  font-family: var(--f-mono);
+  font-size: var(--t-label);
+  font-weight: 700;
+  letter-spacing: var(--tr-label);
+  text-transform: uppercase;
+  color: var(--c-fg-mute);
+  box-shadow: inset 0 0 0 1px var(--c-line-strong);
+  transition:
+    background var(--d-fast) var(--e-out),
+    color      var(--d-fast) var(--e-out),
+    transform  var(--d-fast) var(--e-spring);
+}
+
+.notice__btn:hover { color: var(--c-fg); box-shadow: inset 0 0 0 1px var(--c-fg); }
+.notice__btn:active { transform: scale(0.98); }
+
+.notice__btn--go {
+  background: var(--c-accent);
+  color: var(--c-accent-ink);
+  box-shadow: none;
+}
+.notice__btn--go:hover { background: var(--c-fg); color: var(--c-accent-ink); box-shadow: none; }
+
+@media (max-width: 599px) {
+  .notice { padding: var(--s-6) var(--s-4); }
+  .notice__btn { flex: 1 1 auto; }
+}

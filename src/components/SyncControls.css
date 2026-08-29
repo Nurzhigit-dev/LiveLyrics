@@ -1,0 +1,82 @@
+.sync {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: 0 0 auto;
+}
+
+/* --- Nudge stepper -------------------------------------------------------- */
+
+.sync__group {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--radius);
+}
+
+.sync__step {
+  display: grid;
+  place-items: center;
+  /* 44px square: the glyph inside is only 14px, but the target is full size. */
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  color: var(--c-fg-mute);
+  transition: color var(--d-fast) var(--e-out), background var(--d-fast) var(--e-out);
+}
+
+.sync__step:hover  { color: var(--c-accent); background: rgb(214 255 63 / 0.08); }
+.sync__step:active { color: var(--c-accent-ink); background: var(--c-accent); }
+
+.sync__value {
+  min-inline-size: 3.25rem;
+  text-align: center;
+  color: var(--c-fg);
+  padding-inline: var(--s-1);
+  /* Tabular figures plus a fixed min-width: the bar never twitches as the
+     value moves between "sync", "+0.5" and "-1.0". */
+}
+
+/* --- Actions -------------------------------------------------------------- */
+
+.sync__action {
+  min-block-size: 2.75rem;
+  padding-inline: var(--s-4);
+  border-radius: var(--radius);
+  font-family: var(--f-mono);
+  font-size: var(--t-label);
+  font-weight: 700;
+  letter-spacing: var(--tr-label);
+  text-transform: uppercase;
+  color: var(--c-accent-ink);
+  background: var(--c-accent);
+  white-space: nowrap;
+  transition:
+    background var(--d-fast) var(--e-out),
+    color      var(--d-fast) var(--e-out),
+    transform  var(--d-fast) var(--e-spring);
+}
+
+.sync__action:hover:not(:disabled) { background: var(--c-fg); }
+.sync__action:active:not(:disabled) { transform: scale(0.97); }
+.sync__action:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.sync__action--quiet {
+  background: none;
+  color: var(--c-fg-mute);
+  box-shadow: inset 0 0 0 1px var(--c-line-strong);
+}
+.sync__action--quiet:hover { color: var(--c-fg); background: none; box-shadow: inset 0 0 0 1px var(--c-fg); }
+
+/* --- Responsive ----------------------------------------------------------- */
+
+/* On a phone the bar has room for the stepper and one action, so the label
+   shortens and the secondary action drops out rather than wrapping. */
+@media (max-width: 767px) {
+  .sync__action { padding-inline: var(--s-3); }
+  .sync__action--quiet { display: none; }
+}
+
+@media (max-width: 479px) {
+  .sync__value { min-inline-size: 2.5rem; }
+  .sync__step { inline-size: 2.5rem; }
+}
