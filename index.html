@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- initial-scale=1 with no maximum-scale: pinch-zoom stays available. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0A0A0B" />
+    <meta
+      name="description"
+      content="Listens to the music around you, works out what is playing and how far in you are, then shows the lyrics in time with the room."
+    />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!--
+      Fonts. preconnect opens the connection to the font host early so the
+      stylesheet request doesn't pay for DNS + TLS when it arrives.
+      display=swap draws fallback text immediately rather than leaving the
+      page blank while the webfont downloads.
+
+      Archivo is loaded as a variable font across both its width and weight
+      axes in one file, so the huge lyric type can shift weight and condense
+      without a second network request.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=JetBrains+Mono:wght@400..700&display=swap"
+    />
+
+    <title>Lyricwave — lyrics, in time with the room</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

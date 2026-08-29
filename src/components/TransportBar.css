@@ -1,0 +1,73 @@
+.transport {
+  position: relative;
+  z-index: var(--z-bar);
+  flex: 0 0 auto;
+  background: var(--c-bg);
+}
+
+/* --- Progress hairline --------------------------------------------------- */
+
+.transport__track {
+  position: relative;
+  block-size: 1px;
+  inline-size: 100%;
+  background: var(--c-line);
+}
+
+.transport__fill {
+  position: absolute;
+  inset: 0;
+  background: var(--c-accent);
+  transform-origin: left center;
+  /* scaleX rather than width: it runs on the compositor and can never
+     trigger a layout pass, even updating several times a second. */
+  transition: transform var(--d-fast) linear;
+  will-change: transform;
+}
+
+/* --- Body ---------------------------------------------------------------- */
+
+.transport__body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  block-size: var(--bar-h);
+  padding-inline: var(--gutter) var(--gutter-end);
+}
+
+.transport__meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  min-inline-size: 0;   /* lets the children actually shrink and ellipsis */
+}
+
+.transport__title {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.transport__sep { color: var(--c-fg-ghost); flex: 0 0 auto; }
+
+.transport__artist {
+  font-size: 0.9375rem;
+  color: var(--c-fg-mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.transport__empty { color: var(--c-fg-mute); }
+
+.transport__time { color: var(--c-fg-mute); flex: 0 0 auto; }
+
+@media (max-width: 599px) {
+  .transport__body { padding-inline: var(--s-4); }
+  .transport__artist { display: none; }
+  .transport__sep { display: none; }
+}

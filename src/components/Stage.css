@@ -1,0 +1,176 @@
+.stage {
+  flex: 1 1 auto;
+  display: grid;
+  /* Asymmetric: the headline column takes what it needs, the technical rail is
+     fixed and narrow. Not a 50/50 split, not centred. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 20rem);
+  align-items: end;
+  gap: var(--s-8) var(--s-7);
+  padding: var(--s-8) var(--gutter-end) var(--s-7) var(--gutter);
+  /* min-block-size:0 lets this flex child actually shrink; overflow-y then
+     scrolls the stage instead of clipping the button off the bottom on a
+     short window. */
+  min-block-size: 0;
+  overflow-y: auto;
+}
+
+/* --- Headline column ----------------------------------------------------- */
+
+.stage__lead {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-5);
+  /* `ch` resolves against THIS element's font-size (16px), not the headline's,
+     so a character-based cap here would crush the column. Use an explicit
+     measure instead and let each child set its own reading width. */
+  max-inline-size: min(100%, 44rem);
+}
+
+.stage__eyebrow {
+  color: var(--c-accent);
+  padding-block-end: var(--s-2);
+  border-block-end: 1px solid var(--c-line-strong);
+  inline-size: 100%;
+}
+
+.stage__headline {
+  font-size: var(--t-display);
+  font-weight: 800;
+  line-height: 0.9;                 /* poster-tight leading */
+  letter-spacing: var(--tr-lyric);
+  text-transform: uppercase;
+  /* Archivo carries a width axis; nudging it wider fills the column without
+     bumping the size up and causing a wrap. */
+  font-variation-settings: 'wdth' 112;
+  text-wrap: balance;
+}
+
+.stage__line { display: block; }
+
+.stage__line--accent {
+  color: var(--c-accent);
+  /* A pale outline instead of a fill would be the obvious move; a solid accent
+     word is louder and matches the single-accent rule. */
+}
+
+.stage__blurb {
+  max-inline-size: 46ch;            /* readable measure, ~60 chars incl. spaces */
+  color: var(--c-fg-mute);
+  font-size: clamp(0.9375rem, 1.1vw, 1.0625rem);
+  line-height: var(--lh-body);
+}
+
+.stage__blurb em {
+  color: var(--c-fg);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.stage__action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-3);
+  margin-block-start: var(--s-2);
+}
+
+.stage__consent {
+  font-family: var(--f-mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  /* 11px is small text: needs the 4.5:1 token, not the large-text one. */
+  color: var(--c-fg-mute);
+}
+
+/* --- Technical rail ------------------------------------------------------ */
+
+.stage__rail { align-self: end; }
+
+.stage__chain {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border-block-start: 1px solid var(--c-line-strong);
+}
+
+.stage__step {
+  display: grid;
+  grid-template-columns: 2.25rem 1fr;
+  grid-template-areas:
+    'n name'
+    '. detail';
+  gap: var(--s-1) var(--s-3);
+  padding-block: var(--s-4);
+  border-block-end: 1px solid var(--c-line);
+}
+
+.stage__step-n {
+  grid-area: n;
+  color: var(--c-accent);
+  padding-block-start: 0.2em;
+}
+
+.stage__step-name {
+  grid-area: name;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.stage__step-detail {
+  grid-area: detail;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--c-fg-mute);
+}
+
+/* --- Entrance ------------------------------------------------------------
+   Each element declares its own index via --i; the stagger is 55ms apart,
+   inside the 30–50ms-per-item guidance for a list of this length. Only
+   transform and opacity animate, so nothing reflows. */
+
+.stage__eyebrow,
+.stage__line,
+.stage__blurb,
+.stage__action,
+.stage__step {
+  animation: rise var(--d-slow) var(--e-out) backwards;
+  animation-delay: calc(var(--i, 0) * 55ms);
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage__eyebrow,
+  .stage__line,
+  .stage__blurb,
+  .stage__action,
+  .stage__step { animation: none; }
+}
+
+/* --- Responsive ---------------------------------------------------------- */
+
+/* Below a laptop the rail drops under the headline and becomes a full-width
+   list rather than trying to survive as a squeezed column. */
+@media (max-width: 899px) {
+  .stage {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: var(--s-7);
+    padding: var(--s-7) var(--s-4) var(--s-6);
+  }
+  .stage__lead { max-inline-size: none; }
+  .stage__headline { font-variation-settings: 'wdth' 100; }
+  .stage__rail { align-self: start; }
+}
+
+/* Landscape phones have almost no vertical room — tighten everything so the
+   button stays reachable without scrolling. */
+@media (max-height: 520px) and (orientation: landscape) {
+  .stage { padding-block: var(--s-5); gap: var(--s-5); }
+  .stage__headline { font-size: clamp(2rem, 6vh, 3rem); }
+}

@@ -1,0 +1,91 @@
+.statusbar {
+  position: relative;
+  z-index: var(--z-bar);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  block-size: var(--bar-h);
+  padding-inline: var(--gutter) var(--gutter-end);
+  border-block-end: 1px solid var(--c-line);
+  background: var(--c-bg);
+  flex: 0 0 auto;
+}
+
+.statusbar__group {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-inline-size: 0;
+}
+
+.statusbar__group--end { gap: var(--s-5); }
+
+.statusbar__phase { color: var(--c-fg); }
+
+.statusbar__readout { color: var(--c-fg-mute); white-space: nowrap; }
+
+.statusbar__mark {
+  color: var(--c-fg);
+  letter-spacing: 0.18em;
+}
+
+/* --- The status dot ------------------------------------------------------ */
+
+.statusbar__dot {
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  background: var(--c-fg-dim);
+  flex: 0 0 auto;
+  transition: background var(--d-fast) var(--e-out);
+}
+
+.statusbar__dot--listening,
+.statusbar__dot--identifying {
+  background: var(--c-rec);
+  animation: pulse 1.4s var(--e-out) infinite;
+}
+
+.statusbar__dot--fetching { background: var(--c-accent-dim); }
+.statusbar__dot--synced   { background: var(--c-accent); }
+.statusbar__dot--error,
+.statusbar__dot--nomatch  { background: var(--c-danger); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.25; }
+}
+
+/* --- Live scan line ------------------------------------------------------
+   A 1px accent line that sweeps the bottom edge of the bar while the mic is
+   open. It is the one piece of ambient motion in the app, and it only runs
+   when something real is happening. */
+
+.statusbar__scan {
+  position: absolute;
+  inset-block-end: -1px;
+  inset-inline-start: 0;
+  block-size: 1px;
+  inline-size: 28%;
+  background: linear-gradient(90deg, transparent, var(--c-accent), transparent);
+  animation: scan 2.1s var(--e-out) infinite;
+}
+
+@keyframes scan {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(460%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .statusbar__dot--listening,
+  .statusbar__dot--identifying { animation: none; }
+  .statusbar__scan { animation: none; opacity: 0.5; inline-size: 100%; }
+}
+
+/* On a narrow phone the readouts are the first thing to go — the phase label
+   and the wordmark carry the essential state. */
+@media (max-width: 599px) {
+  .statusbar__readout { display: none; }
+  .statusbar { padding-inline: var(--s-4); }
+}
