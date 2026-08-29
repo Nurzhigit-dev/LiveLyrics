@@ -28,7 +28,7 @@
   padding-block: 40vh 58vh;
   display: flex;
   flex-direction: column;
-  gap: 0.32em;
+  gap: 0.42em;
 }
 
 /* --- A line --------------------------------------------------------------- */
@@ -37,8 +37,8 @@
   display: block;
   inline-size: 100%;
   text-align: start;
-  padding-block: 0.1em;
-  max-inline-size: 18ch;         /* resolved at the lyric size: ~18 characters */
+  padding-block: 0.06em;
+  max-inline-size: 17ch;         /* resolved at the lyric size: ~17 characters */
 
   font-family: var(--f-display);
   font-size: var(--t-lyric);
@@ -46,70 +46,72 @@
   letter-spacing: var(--tr-tight);
   color: var(--c-fg);
 
-  font-variation-settings: 'wght' 500, 'wdth' 98;
+  font-variation-settings: 'wght' 700, 'wdth' 100;
   transform-origin: left center;
-  will-change: opacity, transform, filter;
 
   /*
-   * font-variation-settings is deliberately NOT transitioned. Animating the
-   * weight axis changes glyph widths, which rewraps the line and changes its
-   * height mid-flight — a genuine layout animation, and it kept invalidating
-   * the scroll target. Weight snaps; opacity, scale and blur carry the motion.
+   * Only opacity and transform. Two things are deliberately absent:
+   *
+   * - filter: blur() used to fade distant lines out of focus. Animating a
+   *   filter on text forces every glyph to be re-rasterised on every frame,
+   *   and that landed in the same frames as the scroll — it was the single
+   *   biggest source of stutter. The softness now lives in the background.
+   *
+   * - font-variation-settings. Animating the weight axis changes glyph widths,
+   *   which rewraps the line and changes its height mid-flight: a genuine
+   *   layout animation, and it kept invalidating the scroll target.
    */
   transition:
     opacity   var(--d-slow) var(--e-out),
-    transform var(--d-slow) var(--e-out),
-    filter    var(--d-slow) var(--e-out),
-    color     var(--d-base) var(--e-out);
+    transform var(--d-slow) var(--e-out);
 }
 
-/* Distance from the active line drives opacity, scale and focus. The blur is
-   what turns a flat list into something with depth — distant lines recede
-   rather than merely dimming. */
-.lyrics__line[data-distance='0'] { opacity: 1;    transform: scale(1);     filter: none; }
-.lyrics__line[data-distance='1'] { opacity: 0.46; transform: scale(0.955); filter: blur(0.3px); }
-.lyrics__line[data-distance='2'] { opacity: 0.28; transform: scale(0.93);  filter: blur(1px); }
-.lyrics__line[data-distance='3'] { opacity: 0.18; transform: scale(0.92);  filter: blur(1.7px); }
-.lyrics__line[data-distance='4'] { opacity: 0.12; transform: scale(0.91);  filter: blur(2.3px); }
-.lyrics__line[data-distance='5'] { opacity: 0.07; transform: scale(0.91);  filter: blur(2.8px); }
+/* Distance from the active line drives opacity and a slight scale. Upcoming
+   lines stay readable so you can see what is coming. */
+.lyrics__line[data-distance='0'] { opacity: 1;    transform: scale(1); }
+.lyrics__line[data-distance='1'] { opacity: 0.44; transform: scale(0.975); }
+.lyrics__line[data-distance='2'] { opacity: 0.30; transform: scale(0.965); }
+.lyrics__line[data-distance='3'] { opacity: 0.21; transform: scale(0.96); }
+.lyrics__line[data-distance='4'] { opacity: 0.14; transform: scale(0.955); }
+.lyrics__line[data-distance='5'] { opacity: 0.09; transform: scale(0.955); }
 
 /* Lines already sung recede further than lines still to come. */
-.lyrics__line[data-past]:not([data-active]) { opacity: 0.16; }
+.lyrics__line[data-past]:not([data-active]) { opacity: 0.18; }
 .lyrics__line[data-past][data-distance='1'] { opacity: 0.3; }
 
 .lyrics__line[data-active] {
-  font-variation-settings: 'wght' 760, 'wdth' 104;
+  color: var(--c-fg);
   /* A soft bloom, as if the line were lit rather than merely brighter. */
-  text-shadow: 0 0 38px rgb(247 246 243 / 0.18);
+  text-shadow: 0 2px 30px rgb(0 0 0 / 0.28);
 }
 
 /* --- Word-by-word lighting ------------------------------------------------
    --lit is written to the active line each frame as (progress * wordCount).
    Each word knows its own index, so the whole per-word ramp falls out of one
-   subtraction in CSS with no JavaScript per element. */
+   subtraction in CSS, with no per-element JavaScript. */
 
 .lyrics__word {
   --local: calc(var(--lit, 0) - var(--i));
-  transition: opacity 220ms linear;
+  transition: opacity 260ms linear;
 }
 
 .lyrics__line[data-active] .lyrics__word {
-  opacity: clamp(0.34, var(--local), 1);
+  opacity: clamp(0.38, var(--local), 1);
 }
 
 /* --- Active line marker ---------------------------------------------------
-   A small accent dot in the gutter. It means the current line is not signalled
-   by brightness alone. */
+   A small dot in the gutter, so the current line is not signalled by
+   brightness alone. */
 .lyrics__line::before {
   content: '';
   position: absolute;
-  inset-inline-start: calc(var(--gutter) * -0.55);
-  inline-size: 8px;
-  block-size: 8px;
+  inset-inline-start: calc(var(--gutter) * -0.5);
+  inline-size: 7px;
+  block-size: 7px;
   border-radius: var(--r-pill);
-  margin-block-start: 0.52em;
-  background: var(--c-accent);
-  box-shadow: 0 0 16px var(--c-accent-glow);
+  margin-block-start: 0.55em;
+  background: var(--c-fg);
+  box-shadow: 0 0 14px rgb(255 255 255 / 0.5);
   opacity: 0;
   transform: scale(0.4);
   transition:
@@ -117,7 +119,7 @@
     transform var(--d-base) var(--e-spring);
 }
 
-.lyrics__line[data-active]::before { opacity: 1; transform: scale(1); }
+.lyrics__line[data-active]::before { opacity: 0.9; transform: scale(1); }
 
 /* --- Clickable lines ------------------------------------------------------ */
 
@@ -129,13 +131,10 @@
   border-radius: var(--r-md);
 }
 
-.lyrics__line--seek:not([data-active]):hover {
-  opacity: 0.75;
-  filter: none;
-}
+.lyrics__line--seek:not([data-active]):hover { opacity: 0.8; }
 
 .lyrics__line--seek:focus-visible {
-  outline: var(--ring) solid var(--c-accent);
+  outline: var(--ring) solid var(--c-fg);
   outline-offset: 6px;
 }
 
@@ -144,7 +143,7 @@
 .lyrics__rest {
   display: flex;
   gap: 0.55rem;
-  padding-block: 0.75em;
+  padding-block: 0.7em;
   align-items: center;
 }
 
@@ -157,16 +156,15 @@
 }
 
 .lyrics__rest[data-active] span {
-  background: var(--c-accent);
-  box-shadow: 0 0 14px var(--c-accent-glow);
+  background: var(--c-fg);
   animation: rest-pulse 1.8s var(--e-soft) infinite;
 }
 .lyrics__rest[data-active] span:nth-child(2) { animation-delay: 0.22s; }
 .lyrics__rest[data-active] span:nth-child(3) { animation-delay: 0.44s; }
 
 @keyframes rest-pulse {
-  0%, 100% { opacity: 0.28; transform: scale(0.85); }
-  50%      { opacity: 1;    transform: scale(1.1); }
+  0%, 100% { opacity: 0.3; transform: scale(0.85); }
+  50%      { opacity: 1;   transform: scale(1.1); }
 }
 
 /* --- Static mode ----------------------------------------------------------
@@ -176,10 +174,9 @@
 .lyrics[data-mode='static'] .lyrics__reel { padding-block: var(--s-8) 40vh; }
 
 .lyrics[data-mode='static'] .lyrics__line {
-  opacity: 0.86;
+  opacity: 0.9;
   transform: none;
-  filter: none;
-  font-variation-settings: 'wght' 500, 'wdth' 100;
+  font-variation-settings: 'wght' 600, 'wdth' 100;
   font-size: clamp(1.2rem, 3vw, 2rem);
   max-inline-size: 30ch;
 }
@@ -191,19 +188,21 @@
 .lyrics__fade {
   position: absolute;
   inset-inline: 0;
-  block-size: 24%;
+  block-size: 22%;
   pointer-events: none;
   z-index: var(--z-overlay);
 }
 
+/* Transparent black rather than a background colour, so the fade works over
+   the drifting colour field instead of punching a flat rectangle through it. */
 .lyrics__fade--top {
   inset-block-start: 0;
-  background: linear-gradient(var(--c-bg) 6%, rgb(10 10 13 / 0.75) 42%, transparent);
+  background: linear-gradient(rgb(18 4 7 / 0.85), transparent);
 }
 
 .lyrics__fade--bottom {
   inset-block-end: 0;
-  background: linear-gradient(transparent, rgb(10 10 13 / 0.8) 55%, var(--c-bg) 94%);
+  background: linear-gradient(transparent, rgb(18 4 7 / 0.85));
 }
 
 /* --- Responsive ----------------------------------------------------------- */
@@ -211,17 +210,17 @@
 @media (max-width: 599px) {
   .lyrics { padding-inline: var(--s-4); }
   .lyrics__line { max-inline-size: none; }
-  /* No gutter for a marker on a phone — tuck it inline above the line. */
+  /* No gutter for a marker on a phone — tuck it above the line instead. */
   .lyrics__line::before {
     inset-inline-start: 0;
-    inset-block-start: -0.35em;
+    inset-block-start: -0.3em;
     margin-block-start: 0;
-    inline-size: 6px;
-    block-size: 6px;
+    inline-size: 5px;
+    block-size: 5px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .lyrics__rest[data-active] span { animation: none; opacity: 1; transform: none; }
-  .lyrics__line { transition: opacity 1ms linear; filter: none !important; }
+  .lyrics__line { transition: opacity 1ms linear; }
 }

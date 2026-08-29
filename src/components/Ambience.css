@@ -1,0 +1,96 @@
+.ambience {
+  position: fixed;
+  inset: 0;
+  z-index: -1;                 /* behind the app shell, never in its way */
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--c-bg-deep);
+}
+
+/* --- Colour pools ----------------------------------------------------------
+   Each pool is one soft radial gradient, blurred once and then only ever
+   moved. Deliberately oversized and pushed past the edges so the blur never
+   reveals a hard boundary at the viewport border. */
+
+.ambience__pool {
+  position: absolute;
+  inline-size: 78vmax;
+  block-size: 78vmax;
+  border-radius: 50%;
+  /* Set once, never transitioned — animating a filter would re-rasterise the
+     layer every frame. */
+  filter: blur(72px);
+  will-change: transform;
+}
+
+.ambience__pool--1 {
+  background: radial-gradient(circle, var(--c-crimson) 0%, transparent 66%);
+  inset-block-start: -26%;
+  inset-inline-start: -18%;
+  opacity: 0.62;
+  animation: drift-1 34s var(--e-soft) infinite alternate;
+}
+
+.ambience__pool--2 {
+  background: radial-gradient(circle, var(--c-rose) 0%, transparent 62%);
+  inset-block-start: 6%;
+  inset-inline-end: -24%;
+  opacity: 0.5;
+  animation: drift-2 41s var(--e-soft) infinite alternate;
+}
+
+.ambience__pool--3 {
+  background: radial-gradient(circle, var(--c-coral) 0%, transparent 58%);
+  inset-block-end: -34%;
+  inset-inline-start: 8%;
+  opacity: 0.38;
+  animation: drift-3 47s var(--e-soft) infinite alternate;
+}
+
+.ambience__pool--4 {
+  background: radial-gradient(circle, var(--c-plum) 0%, transparent 64%);
+  inset-block-end: -20%;
+  inset-inline-end: 4%;
+  opacity: 0.66;
+  animation: drift-4 38s var(--e-soft) infinite alternate;
+}
+
+/* Long, slow, offset cycles so the field never visibly loops. Transform only:
+   no layout, no paint, no re-rasterisation. */
+@keyframes drift-1 {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(9vw, 7vh, 0) scale(1.14); }
+}
+@keyframes drift-2 {
+  from { transform: translate3d(0, 0, 0) scale(1.08); }
+  to   { transform: translate3d(-11vw, 10vh, 0) scale(0.94); }
+}
+@keyframes drift-3 {
+  from { transform: translate3d(0, 0, 0) scale(0.96); }
+  to   { transform: translate3d(13vw, -8vh, 0) scale(1.16); }
+}
+@keyframes drift-4 {
+  from { transform: translate3d(0, 0, 0) scale(1.05); }
+  to   { transform: translate3d(-8vw, -11vh, 0) scale(0.92); }
+}
+
+/* --- Vignette -------------------------------------------------------------
+   Kept weak on purpose: it sits over body copy, and a heavy vignette would
+   quietly drag corner text under the contrast floor. */
+.ambience__vignette {
+  position: absolute;
+  inset: 0;
+  /* Two layers in one declaration: a radial falloff for the corners, over a
+     flat deepening pass. The flat layer has to be part of the same shorthand —
+     declaring background-color separately and then `background` would reset
+     it, silently dropping the deepening. Without it the mid-field stays bright
+     enough that white type has nothing to sit against. */
+  background:
+    radial-gradient(125% 95% at 50% 40%, transparent 30%, rgb(9 2 4 / 0.82) 100%),
+    linear-gradient(rgb(10 2 5 / 0.34), rgb(10 2 5 / 0.34));
+}
+
+/* The drift is ambience, not information. Hold the pools still. */
+@media (prefers-reduced-motion: reduce) {
+  .ambience__pool { animation: none; }
+}

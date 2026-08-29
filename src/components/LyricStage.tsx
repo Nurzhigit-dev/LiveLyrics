@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import type { LyricLine } from '../types';
 import './LyricStage.css';
 
@@ -22,18 +22,100 @@ const FOCAL_RATIO = 0.40;
 const MAX_DISTANCE = 5;
 
 /** How long the reel takes to glide to a new line. */
-const SCROLL_MS = 720;
+const SCROLL_MS = 760;
 
 /** Assumed length of the final line, which has no following timestamp. */
 const LAST_LINE_SECONDS = 4;
 
-export function LyricStage({
-  lines, activeIndex, synced, getPosition, onSeekToLine,
-}: Props) {
+/* ---------------------------------------------------------------------------
+ * One line.
+ *
+ * memo() matters more than it looks. When the active line changes, only about
+ * four rows actually change appearance, but without this every row in the song
+ * — often two hundred of them — would re-render and have its styles
+ * recalculated. That work landed in the same frames as the scroll animation,
+ * which is exactly when it is most visible as a stutter.
+ * ------------------------------------------------------------------------ */
+
+interface RowProps {
+  line: LyricLine;
+  index: number;
+  distance: number;
+  isActive: boolean;
+  isPast: boolean;
+  seekable: boolean;
+  onSeek?: (index: number) => void;
+  attach: (index: number, el: HTMLElement | null) => void;
+}
+
+const LyricRow = memo(function LyricRow({
+  line, index, distance, isActive, isPast, seekable, onSeek, attach,
+}: RowProps) {
+  const ref = useCallback(
+    (el: HTMLElement | null) => attach(index, el),
+    [attach, index],
+  );
+
+  // An empty LRC line is an instrumental gap, not a bug.
+  if (!line.text) {
+    return (
+      <div ref={ref} className="lyrics__rest" data-active={isActive || undefined} aria-hidden="true">
+        <span /><span /><span />
+      </div>
+    );
+  }
+
+  const words = line.text.split(/\s+/);
+  const shared = {
+    ref,
+    'data-distance': distance,
+    'data-active': isActive || undefined,
+    'data-past': isPast || undefined,
+    'data-words': words.length,
+    'aria-current': isActive ? ('true' as const) : undefined,
+  };
+
+  // Only the active line is split into words. Every other line stays a single
+  // text node, which keeps the DOM small on a long song.
+  const content = isActive && seekable
+    ? words.map((word, w) => (
+        <span
+          key={`${w}-${word}`}
+          className="lyrics__word"
+          style={{ '--i': w } as React.CSSProperties}
+        >
+          {word}{w < words.length - 1 ? ' ' : ''}
+        </span>
+      ))
+    : line.text;
+
+  return seekable && onSeek ? (
+    <button
+      type="button"
+      className="lyrics__line lyrics__line--seek"
+      onClick={() => onSeek(index)}
+      title="Set the sync to this line"
+      {...shared}
+    >
+      {content}
+    </button>
+  ) : (
+    <p className="lyrics__line" {...shared}>{content}</p>
+  );
+});
+
+/* ------------------------------------------------------------------------ */
+
+function LyricStageInner({ lines, activeIndex, synced, getPosition, onSeekToLine }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<Array<HTMLElement | null>>([]);
   const scrollFrame = useRef(0);
   const litFrame = useRef(0);
+
+  // Stable identity, so memoised rows are not invalidated on every render.
+  const attach = useCallback((index: number, el: HTMLElement | null) => {
+    lineRefs.current[index] = el;
+  }, []);
 
   const reduced = () =>
     typeof window !== 'undefined' &&
@@ -42,14 +124,10 @@ export function LyricStage({
   /**
    * Glides the reel so the active line lands on the focal point.
    *
-   * This is a hand-rolled scroll animation rather than
-   * `scrollTo({behavior:'smooth'})` because the native one has a fixed,
-   * platform-defined curve and duration that cannot be matched to the rest of
-   * the app's motion — it lands with a noticeable stutter next to everything
-   * else. A quartic ease-out gives a long, calm tail that suits a song.
-   *
-   * Geometry is read live from the rendered boxes each time, so nothing goes
-   * stale when the webfont swaps in or a line rewraps.
+   * Hand-rolled rather than `scrollTo({behavior:'smooth'})`, whose curve and
+   * duration are platform-defined and cannot be matched to the rest of the
+   * app's motion. Geometry is read live from the rendered boxes each time, so
+   * nothing goes stale when the webfont swaps in or a line rewraps.
    */
   const glideToActive = useCallback((animate: boolean) => {
     if (!synced) return;
@@ -76,23 +154,22 @@ export function LyricStage({
     const startedAt = performance.now();
     const step = (now: number) => {
       const t = Math.min(1, (now - startedAt) / SCROLL_MS);
-      const eased = 1 - (1 - t) ** 4;
+      // Quintic ease-out: leaves quickly, arrives with a long calm tail.
+      const eased = 1 - (1 - t) ** 5;
       viewport.scrollTop = from + delta * eased;
       if (t < 1) scrollFrame.current = requestAnimationFrame(step);
     };
     scrollFrame.current = requestAnimationFrame(step);
   }, [activeIndex, synced]);
 
-  // Follow the song. useLayoutEffect so the first frame is never drawn at the
-  // old position.
   useLayoutEffect(() => {
     glideToActive(true);
     return () => cancelAnimationFrame(scrollFrame.current);
   }, [glideToActive]);
 
-  // Re-align when geometry shifts underneath us. The webfont finishing its
-  // swap changes every line's height, and a resize changes the wrapping —
-  // neither is an activeIndex change, so neither is caught above.
+  // Re-align when geometry shifts underneath us: the webfont finishing its
+  // swap changes every line's height, and a resize changes the wrapping.
+  // Neither is an activeIndex change, so neither is caught above.
   useEffect(() => {
     if (!synced) return;
     let cancelled = false;
@@ -109,14 +186,14 @@ export function LyricStage({
   /**
    * Lights the active line up word by word as it is sung.
    *
-   * LRC files only carry per-line timings, so word positions are interpolated
-   * across the line's duration. It is an approximation, which is why words
-   * brighten on a soft ramp rather than snapping on like a hard karaoke wipe.
+   * LRC carries per-line timings only, so word positions are interpolated
+   * across the line's duration — an approximation, which is why words brighten
+   * on a ramp rather than snapping on like a hard karaoke wipe.
    *
-   * It writes a single CSS custom property straight to the DOM each frame
-   * instead of going through React state. That keeps it at a genuine 60fps
-   * and avoids re-rendering the whole lyric list on every tick — the CSS does
-   * the per-word arithmetic from that one number.
+   * It writes one CSS custom property straight to the DOM each frame rather
+   * than going through React state, so it runs at a true 60fps and the lyric
+   * list never re-renders. The per-word arithmetic is done in CSS from that
+   * single number.
    */
   useEffect(() => {
     const el = lineRefs.current[activeIndex];
@@ -130,7 +207,7 @@ export function LyricStage({
     const tick = () => {
       const progress = Math.min(1, Math.max(0, (getPosition() - start) / span));
       // +0.85 so the first word is already lit as the line arrives, rather
-      // than the line appearing completely dark for a beat.
+      // than the line sitting dark for a beat.
       el.style.setProperty('--lit', String(progress * words + 0.85));
       litFrame.current = requestAnimationFrame(tick);
     };
@@ -159,69 +236,19 @@ export function LyricStage({
       )}
 
       <div className="lyrics__reel">
-        {lines.map((line, i) => {
-          const distance = Math.min(MAX_DISTANCE, Math.abs(i - activeIndex));
-          const isActive = i === activeIndex;
-
-          // An empty LRC line is an instrumental gap, not a bug.
-          if (!line.text) {
-            return (
-              <div
-                key={`${line.time}-${i}`}
-                ref={(el) => { lineRefs.current[i] = el; }}
-                className="lyrics__rest"
-                data-active={isActive || undefined}
-                aria-hidden="true"
-              >
-                <span /><span /><span />
-              </div>
-            );
-          }
-
-          const words = line.text.split(/\s+/);
-          const shared = {
-            ref: (el: HTMLElement | null) => { lineRefs.current[i] = el; },
-            'data-distance': distance,
-            'data-active': isActive || undefined,
-            'data-past': i < activeIndex || undefined,
-            'data-words': words.length,
-            'aria-current': isActive ? ('true' as const) : undefined,
-          };
-
-          // Only the active line is split into words. Every other line is a
-          // single text node, which keeps the DOM small on a 200-line song.
-          const content = isActive && synced ? (
-            words.map((word, w) => (
-              <span
-                key={`${w}-${word}`}
-                className="lyrics__word"
-                style={{ '--i': w } as React.CSSProperties}
-              >
-                {word}
-                {w < words.length - 1 ? ' ' : ''}
-              </span>
-            ))
-          ) : (
-            line.text
-          );
-
-          return synced && onSeekToLine ? (
-            <button
-              key={`${line.time}-${i}`}
-              type="button"
-              className="lyrics__line lyrics__line--seek"
-              onClick={() => onSeekToLine(i)}
-              title="Set the sync to this line"
-              {...shared}
-            >
-              {content}
-            </button>
-          ) : (
-            <p key={`${line.time}-${i}`} className="lyrics__line" {...shared}>
-              {content}
-            </p>
-          );
-        })}
+        {lines.map((line, i) => (
+          <LyricRow
+            key={`${line.time}-${i}`}
+            line={line}
+            index={i}
+            distance={Math.min(MAX_DISTANCE, Math.abs(i - activeIndex))}
+            isActive={i === activeIndex}
+            isPast={i < activeIndex}
+            seekable={synced && Boolean(onSeekToLine)}
+            onSeek={onSeekToLine}
+            attach={attach}
+          />
+        ))}
       </div>
 
       <div className="lyrics__fade lyrics__fade--top" aria-hidden="true" />
@@ -229,3 +256,11 @@ export function LyricStage({
     </div>
   );
 }
+
+/*
+ * The app re-renders ten times a second to drive the clock. Without this the
+ * entire lyric view would be reconciled on every one of those ticks, even
+ * though none of its props changed — all of them are either stable values or
+ * memoised callbacks, and activeIndex only changes a few times a minute.
+ */
+export const LyricStage = memo(LyricStageInner);

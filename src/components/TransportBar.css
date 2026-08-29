@@ -4,7 +4,7 @@
   flex: 0 0 auto;
   /* Frosted, matching the status bar, so lyrics dissolve under it rather than
      being cut off by a hard edge. */
-  background: rgb(10 10 13 / 0.72);
+  background: rgb(22 6 10 / 0.52);
   backdrop-filter: blur(16px) saturate(140%);
 }
 

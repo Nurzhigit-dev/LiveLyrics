@@ -158,7 +158,18 @@ export async function captureSample(opts: CaptureOptions): Promise<CaptureResult
     const chunks: Float32Array[] = [];
     let collected = 0;
 
-    const startedAt = performance.now();
+    /*
+     * Timestamped on the FIRST audio frame that actually arrives, not before
+     * the wait begins.
+     *
+     * Everything between connecting the graph and the first frame — worklet
+     * start-up, the device warming up, the initial buffer — would otherwise be
+     * counted as song time that had already elapsed, pushing the lyrics ahead
+     * of the music by a variable amount on every run. Anchoring to real audio
+     * removes that entirely.
+     */
+    let startedAt = performance.now();
+    let gotFirstFrame = false;
 
     await new Promise<void>((resolve, reject) => {
       const finish = () => {
@@ -181,6 +192,14 @@ export async function captureSample(opts: CaptureOptions): Promise<CaptureResult
 
       capture.port.onmessage = (event: MessageEvent<Float32Array>) => {
         const frame = event.data;
+
+        if (!gotFirstFrame) {
+          gotFirstFrame = true;
+          // This frame was captured over the render quantum just ended, so the
+          // audio it holds began roughly one frame-length ago.
+          startedAt = performance.now() - (frame.length / ctx.sampleRate) * 1000;
+        }
+
         chunks.push(frame);
         collected += frame.length;
 

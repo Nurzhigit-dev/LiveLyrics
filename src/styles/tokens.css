@@ -10,37 +10,41 @@
 
 :root {
   /* --- Surfaces ----------------------------------------------------------
-     Not pure black. A hint of blue in the shadows makes the accent read as
-     warm by contrast, and gives the grain something to sit on. */
-  --c-bg:        #0A0A0D;
-  --c-bg-1:      #101015;
-  --c-bg-2:      #17171E;
-  --c-bg-sunken: #060608;
+     A warm, lit colour field rather than a neutral dark UI. The deep tones
+     carry the page; the brighter ones are painted as soft out-of-focus pools
+     by the Ambience layer, which is what gives the screen its depth. */
+  --c-bg:       #1B0509;   /* deepest, the corners fall back to this */
+  --c-bg-deep:  #120407;
+  --c-plum:     #4A0E1C;
+  --c-crimson:  #8E1C30;
+  --c-rose:     #C03A4E;
+  --c-coral:    #E0705F;
+  --c-blush:    #F2A38F;
 
   /* --- Text --------------------------------------------------------------
-     Warm off-white rather than #FFF — pure white on near-black glares. */
-  --c-fg:       #F7F6F3;                  /* 18.0:1 */
-  --c-fg-mute:  rgb(247 246 243 / 0.62);  /*  7.9:1  — small text safe */
-  --c-fg-soft:  rgb(247 246 243 / 0.44);  /*  4.5:1  — large text only  */
-  --c-fg-dim:   rgb(247 246 243 / 0.26);  /*  decorative / far lyrics   */
-  --c-fg-ghost: rgb(247 246 243 / 0.10);  /*  never text                */
+     Pure white for the line being sung; everything else is white at reduced
+     alpha so it sits *in* the colour field rather than on top of it. */
+  --c-fg:       #FFFFFF;
+  --c-fg-mute:  rgb(255 255 255 / 0.68);  /* small text, passes AA on plum */
+  --c-fg-soft:  rgb(255 255 255 / 0.46);  /* large text only */
+  --c-fg-dim:   rgb(255 255 255 / 0.28);  /* upcoming lyric lines */
+  --c-fg-ghost: rgb(255 255 255 / 0.12);  /* never text */
 
   /* --- Accent ------------------------------------------------------------
-     A bright chartreuse. It is the only saturated hue in the app, so it can
-     never be mistaken for decoration. The -soft and -glow variants exist so
-     it can be used as light without being shouted. */
-  --c-accent:      #C6F24E;
-  --c-accent-hi:   #E4FF8F;
-  --c-accent-deep: #8FBF2A;
-  --c-accent-ink:  #0C1200;                  /* text placed ON the accent */
-  --c-accent-glow: rgb(198 242 78 / 0.30);
-  --c-accent-veil: rgb(198 242 78 / 0.07);
+     Warm coral, so controls read as part of the same light rather than as a
+     separate brand colour dropped on top. */
+  --c-accent:      #FF8E7A;
+  --c-accent-hi:   #FFB3A2;
+  --c-accent-deep: #D9584A;
+  --c-accent-ink:  #2A0509;                 /* text placed ON the accent */
+  --c-accent-glow: rgb(255 142 122 / 0.34);
+  --c-accent-veil: rgb(255 142 122 / 0.10);
 
-  --c-rec:    #FF5C5C;                       /* recording, and only that */
-  --c-danger: #FF6B6B;
+  --c-rec:    #FF5C5C;
+  --c-danger: #FF8080;
 
-  --c-line:        rgb(247 246 243 / 0.08);
-  --c-line-strong: rgb(247 246 243 / 0.16);
+  --c-line:        rgb(255 255 255 / 0.10);
+  --c-line-strong: rgb(255 255 255 / 0.20);
 
   /* --- Type --------------------------------------------------------------
      Two families. Archivo carries a width axis (62–125) so a long lyric can

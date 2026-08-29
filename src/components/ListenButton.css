@@ -16,7 +16,7 @@
   position: absolute;
   inset: 0;
   border-radius: var(--r-pill);
-  border: 1px solid var(--c-accent);
+  border: 1px solid rgb(255 255 255 / 0.85);
   opacity: 0.16;
   pointer-events: none;
   /* Scale and opacity only — nothing here can trigger a layout pass. */
@@ -60,12 +60,15 @@
   block-size: 9.5rem;
   border-radius: var(--r-pill);
 
+  /* Near-white with a warm cast rather than the accent hue. Against a field
+     that is entirely warm, another warm tone simply disappears into it — the
+     one thing there is to press has to read as light, not as colour. */
   background:
-    radial-gradient(120% 120% at 30% 20%, var(--c-accent-hi), var(--c-accent) 55%, var(--c-accent-deep));
-  color: var(--c-accent-ink);
+    radial-gradient(120% 120% at 30% 22%, #FFFFFF, #FFF1EC 48%, #FFD3C6);
+  color: #2A0509;
   box-shadow:
-    0 0 0 1px rgb(198 242 78 / 0.4),
-    0 18px 48px -16px rgb(198 242 78 / 0.45),
+    0 0 0 1px rgb(255 255 255 / 0.5),
+    0 20px 56px -14px rgb(255 210 195 / 0.42),
     inset 0 1px 0 rgb(255 255 255 / 0.35);
 
   transition:
@@ -77,8 +80,8 @@
 .listen__btn:hover:not(:disabled) {
   transform: scale(1.04);
   box-shadow:
-    0 0 0 1px rgb(198 242 78 / 0.6),
-    0 24px 64px -14px rgb(198 242 78 / 0.6),
+    0 0 0 1px rgb(255 255 255 / 0.75),
+    0 26px 72px -12px rgb(255 220 208 / 0.55),
     inset 0 1px 0 rgb(255 255 255 / 0.4);
 }
 

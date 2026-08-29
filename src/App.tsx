@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Ambience } from './components/Ambience';
 import { Grain } from './components/Grain';
 import { StatusBar } from './components/StatusBar';
 import { Stage } from './components/Stage';
@@ -11,6 +12,7 @@ import { captureSample, MicError } from './lib/audio';
 import { identify, IdentifyError } from './lib/identify';
 import { fetchLyrics, LyricsError } from './lib/lrclib';
 import { findActiveIndex, parseLrc } from './lib/lrc';
+import { clamp, loadCalibration, saveCalibration } from './lib/calibration';
 import type { AppPhase, LyricLine, Track } from './types';
 
 /**
@@ -35,14 +37,17 @@ export default function App() {
   const [lines, setLines] = useState<LyricLine[]>([]);
   const [synced, setSynced] = useState(true);
   const [anchor, setAnchor] = useState<Anchor | null>(null);
-  const [nudge, setNudge] = useState(0);
+  /* The timing correction persists across songs and across sessions: the
+     residual latency is systematic, so making the user re-fix it every time
+     was busywork. */
+  const [calibration, setCalibration] = useState(loadCalibration);
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [level, setLevel] = useState(0);
 
   /** Lets Stop cancel a capture that is already in flight. */
   const abortRef = useRef<AbortController | null>(null);
 
-  const { position, getPosition } = useSongClock(anchor, nudge);
+  const { position, getPosition } = useSongClock(anchor, calibration);
   const activeIndex = useMemo(
     () => (synced ? findActiveIndex(lines, position) : -1),
     [synced, lines, position],
@@ -120,7 +125,6 @@ export default function App() {
 
     setNotice(null);
     setAnchor(null);
-    setNudge(0);
     setPhase('listening');
 
     try {
@@ -195,21 +199,27 @@ export default function App() {
     setTrack(null);
     setLines([]);
     setAnchor(null);
-    setNudge(0);
     setPhase('idle');
+    // Calibration deliberately survives: it describes this device, not this song.
   }, []);
 
   const bumpNudge = useCallback((delta: number) => {
-    setNudge((n) => Math.round((n + delta) * 100) / 100);
+    setCalibration((current) => {
+      const next = clamp(current + delta);
+      saveCalibration(next);
+      return next;
+    });
   }, []);
 
   /** Clicking a lyric line says "the song is here, right now". */
   const seekToLine = useCallback((index: number) => {
     const line = lines[index];
     if (!line) return;
-    setNudge(0);
-    setAnchor({ startedAt: performance.now(), songPosition: line.time });
-  }, [lines]);
+    // Subtracting the calibration here means the clicked line lands exactly on
+    // "now". Without it the saved correction would be applied a second time on
+    // top of a position the user has just stated explicitly.
+    setAnchor({ startedAt: performance.now(), songPosition: line.time - calibration });
+  }, [lines, calibration]);
 
   /*
    * Arrow keys nudge the timing while lyrics are on screen.
@@ -281,7 +291,7 @@ export default function App() {
         actions={
           showLyrics ? (
             <SyncControls
-              nudge={nudge}
+              nudge={calibration}
               synced={synced}
               onNudge={bumpNudge}
               onReset={reset}
@@ -292,6 +302,7 @@ export default function App() {
         }
       />
 
+      <Ambience />
       <Grain />
     </>
   );

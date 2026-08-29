@@ -26,14 +26,9 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 
-  /* Two very soft pools of light bled into the background, so the page reads
-     as a lit space rather than a flat black rectangle. Fixed and static, so
-     they cost nothing after the first paint. */
-  background:
-    radial-gradient(120% 80% at 12% -10%, rgb(198 242 78 / 0.055), transparent 60%),
-    radial-gradient(90% 70% at 92% 108%, rgb(120 160 255 / 0.05), transparent 62%),
-    var(--c-bg);
-  background-attachment: fixed;
+  /* The lit colour field is painted by the Ambience layer, which sits behind
+     the shell. The body only needs the fallback colour underneath it. */
+  background: var(--c-bg-deep);
 }
 
 #root {

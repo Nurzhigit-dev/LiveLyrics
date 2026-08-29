@@ -10,22 +10,9 @@
   inset: 0;
   inline-size: 100%;
   block-size: 100%;
-  opacity: 0.055;
+  opacity: 0.028;
 }
 
-/* Darkens the corners a touch so the eye is pulled to the lyric line.
-   Kept deliberately weak: this sits ON TOP of body copy, so a heavy vignette
-   would quietly drag the bottom-corner text under the 4.5:1 contrast floor.
-   The transparent stop reaches past the content area before it starts to bite. */
-.grain__vignette {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    ellipse 140% 110% at 50% 45%,
-    transparent 62%,
-    rgb(0 0 0 / 0.34) 100%
-  );
-}
 
 /* Grain is texture, not information. If the user has asked for less visual
    noise, honour that literally. */
