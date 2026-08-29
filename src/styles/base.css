@@ -4,32 +4,36 @@
    ========================================================================== */
 
 *, *::before, *::after { box-sizing: border-box; }
-
 * { margin: 0; padding: 0; }
 
 html {
-  /* Fixes the classic mobile bug where the address bar collapsing makes
-     100vh taller than the visible screen. dvh tracks the real viewport. */
   block-size: 100%;
   -webkit-text-size-adjust: 100%;
 }
 
 body {
-  /* A fixed viewport height, not a minimum. This is an app shell, not a
-     document: the two bars stay pinned and the stage between them scrolls on
-     its own. With `min-block-size` the whole page grew instead, and the
-     transport bar slid below the fold on a phone.
-     dvh (not vh) tracks the real viewport as the mobile address bar collapses. */
+  /* A fixed viewport height, not a minimum: this is an app shell, so the bars
+     stay pinned and the stage between them scrolls on its own.
+     dvh (not vh) tracks the real viewport as a mobile address bar collapses. */
   block-size: 100dvh;
-  background: var(--c-bg);
+  overflow: hidden;
+
   color: var(--c-fg);
   font-family: var(--f-display);
   font-size: var(--t-body);
   line-height: var(--lh-body);
-  font-synthesis-weight: none;      /* never fake a weight we didn't load */
+  font-synthesis-weight: none;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  overflow: hidden;                 /* the stage owns scrolling, not the page */
+
+  /* Two very soft pools of light bled into the background, so the page reads
+     as a lit space rather than a flat black rectangle. Fixed and static, so
+     they cost nothing after the first paint. */
+  background:
+    radial-gradient(120% 80% at 12% -10%, rgb(198 242 78 / 0.055), transparent 60%),
+    radial-gradient(90% 70% at 92% 108%, rgb(120 160 255 / 0.05), transparent 62%),
+    var(--c-bg);
+  background-attachment: fixed;
 }
 
 #root {
@@ -52,17 +56,18 @@ button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
 
 /* --- Focus -----------------------------------------------------------------
-   Never remove the focus ring. :focus-visible shows it for keyboard users
-   only, so mouse users don't see a ring on every click. */
+   Never remove the ring. :focus-visible shows it for keyboard users only, so
+   mouse users don't get a ring on every click. */
 :focus { outline: none; }
 :focus-visible {
   outline: var(--ring) solid var(--c-accent);
-  outline-offset: 2px;
+  outline-offset: 3px;
+  border-radius: var(--r-sm);
 }
 
 /* --- Shared primitives ---------------------------------------------------- */
 
-/* Every small uppercase label in the app: mono, tracked out, muted. */
+/* Every small uppercase label: mono, tracked out, muted. */
 .label {
   font-family: var(--f-mono);
   font-size: var(--t-label);
@@ -73,8 +78,8 @@ button:disabled { cursor: not-allowed; }
   line-height: 1;
 }
 
-/* Numbers that tick (timecodes, counters). Tabular figures keep the digits
-   the same width so the layout doesn't jitter every second. */
+/* Numbers that tick. Tabular figures keep digit widths equal so nothing
+   jitters as a timecode counts up. */
 .readout {
   font-family: var(--f-mono);
   font-variant-numeric: tabular-nums;
@@ -82,8 +87,6 @@ button:disabled { cursor: not-allowed; }
   letter-spacing: 0.02em;
 }
 
-/* Visible to screen readers, invisible on screen. Used for context that the
-   sighted layout already conveys some other way. */
 .sr-only {
   position: absolute;
   inline-size: 1px; block-size: 1px;
@@ -94,13 +97,14 @@ button:disabled { cursor: not-allowed; }
   border: 0;
 }
 
-/* Keyboard users land here first; it stays hidden until focused. */
+/* Keyboard users land here first; hidden until focused. */
 .skip-link {
   position: absolute;
-  inset-block-start: var(--s-2);
-  inset-inline-start: var(--s-2);
+  inset-block-start: var(--s-3);
+  inset-inline-start: var(--s-3);
   z-index: var(--z-modal);
   padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-sm);
   background: var(--c-accent);
   color: var(--c-accent-ink);
   font-family: var(--f-mono);
@@ -108,14 +112,24 @@ button:disabled { cursor: not-allowed; }
   letter-spacing: var(--tr-label);
   text-transform: uppercase;
   text-decoration: none;
-  transform: translateY(-200%);
+  transform: translateY(-220%);
+  transition: transform var(--d-base) var(--e-spring);
 }
 .skip-link:focus-visible { transform: translateY(0); }
 
-/* A 1px rule that reads as a hairline on retina rather than a grey bar. */
-.rule {
-  block-size: 1px;
-  inline-size: 100%;
-  background: var(--c-line);
-  border: 0;
+/* --- Screen transitions ----------------------------------------------------
+   Each top-level view fades and lifts in, so switching between the idle
+   screen, the lyrics and an error reads as one surface changing rather than
+   a hard cut. */
+.screen-in {
+  animation: screen-in var(--d-slow) var(--e-out) backwards;
+}
+
+@keyframes screen-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen-in { animation: none; }
 }

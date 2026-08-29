@@ -1,176 +1,143 @@
 .stage {
   flex: 1 1 auto;
-  display: grid;
-  /* Asymmetric: the headline column takes what it needs, the technical rail is
-     fixed and narrow. Not a 50/50 split, not centred. */
-  grid-template-columns: minmax(0, 1fr) minmax(0, 20rem);
-  align-items: end;
-  gap: var(--s-8) var(--s-7);
-  padding: var(--s-8) var(--gutter-end) var(--s-7) var(--gutter);
-  /* min-block-size:0 lets this flex child actually shrink; overflow-y then
-     scrolls the stage instead of clipping the button off the bottom on a
-     short window. */
   min-block-size: 0;
   overflow-y: auto;
-}
-
-/* --- Headline column ----------------------------------------------------- */
-
-.stage__lead {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: var(--s-5);
-  /* `ch` resolves against THIS element's font-size (16px), not the headline's,
-     so a character-based cap here would crush the column. Use an explicit
-     measure instead and let each child set its own reading width. */
-  max-inline-size: min(100%, 44rem);
+  align-items: center;
+  /* `safe` matters here. With plain `center`, content taller than the
+     container overflows in BOTH directions and the top is clipped with no way
+     to scroll to it — which was hiding the eyebrow and the steps row on a
+     short window. `safe` falls back to start-aligning instead of clipping. */
+  justify-content: safe center;
+  gap: var(--s-6);
+  padding: var(--s-6) var(--s-5);
+  text-align: center;
+}
+
+.stage__center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-3);
+  max-inline-size: 34rem;
 }
 
 .stage__eyebrow {
   color: var(--c-accent);
-  padding-block-end: var(--s-2);
-  border-block-end: 1px solid var(--c-line-strong);
-  inline-size: 100%;
+  /* A soft pill so the eyebrow reads as a chip rather than floating text. */
+  padding: var(--s-2) var(--s-4);
+  border-radius: var(--r-pill);
+  background: var(--c-accent-veil);
+  border: 1px solid rgb(198 242 78 / 0.16);
 }
 
 .stage__headline {
   font-size: var(--t-display);
-  font-weight: 800;
-  line-height: 0.9;                 /* poster-tight leading */
-  letter-spacing: var(--tr-lyric);
-  text-transform: uppercase;
-  /* Archivo carries a width axis; nudging it wider fills the column without
-     bumping the size up and causing a wrap. */
-  font-variation-settings: 'wdth' 112;
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: var(--tr-tight);
+  font-variation-settings: 'wght' 700, 'wdth' 100;
   text-wrap: balance;
 }
 
-.stage__line { display: block; }
-
-.stage__line--accent {
-  color: var(--c-accent);
-  /* A pale outline instead of a fill would be the obvious move; a solid accent
-     word is louder and matches the single-accent rule. */
+.stage__headline em {
+  font-style: normal;
+  /* The accent as light: a gradient through the type rather than a flat
+     colour swap, so the emphasis glows instead of just changing hue. */
+  background: linear-gradient(96deg, var(--c-accent-hi), var(--c-accent) 55%, var(--c-accent-deep));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .stage__blurb {
-  max-inline-size: 46ch;            /* readable measure, ~60 chars incl. spaces */
+  max-inline-size: 42ch;
   color: var(--c-fg-mute);
   font-size: clamp(0.9375rem, 1.1vw, 1.0625rem);
   line-height: var(--lh-body);
+  text-wrap: pretty;
 }
 
-.stage__blurb em {
-  color: var(--c-fg);
-  font-style: normal;
-  font-weight: 600;
-}
+.stage__action { margin-block: var(--s-3) var(--s-1); }
 
-.stage__action {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--s-3);
-  margin-block-start: var(--s-2);
-}
-
-.stage__consent {
+.stage__caption {
+  min-block-size: 1.25rem;   /* reserved, so the caption changing never shifts
+                                the button above it */
   font-family: var(--f-mono);
   font-size: var(--t-micro);
-  letter-spacing: 0.06em;
-  /* 11px is small text: needs the 4.5:1 token, not the large-text one. */
+  letter-spacing: 0.05em;
   color: var(--c-fg-mute);
+  transition: color var(--d-base) var(--e-out);
 }
 
-/* --- Technical rail ------------------------------------------------------ */
+/* --- Steps ----------------------------------------------------------------
+   Three quiet facts, not three feature cards. */
 
-.stage__rail { align-self: end; }
-
-.stage__chain {
-  list-style: none;
+.stage__steps {
   display: flex;
-  flex-direction: column;
-  border-block-start: 1px solid var(--c-line-strong);
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s-3) var(--s-6);
+  list-style: none;
+  max-inline-size: 46rem;
 }
 
 .stage__step {
-  display: grid;
-  grid-template-columns: 2.25rem 1fr;
-  grid-template-areas:
-    'n name'
-    '. detail';
-  gap: var(--s-1) var(--s-3);
-  padding-block: var(--s-4);
-  border-block-end: 1px solid var(--c-line);
-}
-
-.stage__step-n {
-  grid-area: n;
-  color: var(--c-accent);
-  padding-block-start: 0.2em;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  font-size: 0.8125rem;
 }
 
 .stage__step-name {
-  grid-area: name;
-  font-size: 0.9375rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 650;
+  color: var(--c-fg);
+  font-variation-settings: 'wght' 650;
 }
 
-.stage__step-detail {
-  grid-area: detail;
-  font-size: 0.8125rem;
-  line-height: 1.5;
-  color: var(--c-fg-mute);
-}
+.stage__step-detail { color: var(--c-fg-mute); }
 
-/* --- Entrance ------------------------------------------------------------
-   Each element declares its own index via --i; the stagger is 55ms apart,
-   inside the 30–50ms-per-item guidance for a list of this length. Only
-   transform and opacity animate, so nothing reflows. */
+/* --- Entrance -------------------------------------------------------------
+   Each element declares its own index; the stagger is 70ms apart. Only
+   opacity and transform animate, so nothing reflows on the way in. */
 
 .stage__eyebrow,
-.stage__line,
+.stage__headline,
 .stage__blurb,
 .stage__action,
+.stage__caption,
 .stage__step {
-  animation: rise var(--d-slow) var(--e-out) backwards;
-  animation-delay: calc(var(--i, 0) * 55ms);
+  animation: stage-rise var(--d-lazy) var(--e-out) backwards;
+  animation-delay: calc(var(--i, 0) * 70ms);
 }
 
-@keyframes rise {
-  from { opacity: 0; transform: translateY(14px); }
+@keyframes stage-rise {
+  from { opacity: 0; transform: translateY(18px); }
   to   { opacity: 1; transform: none; }
+}
+
+/* --- Responsive ----------------------------------------------------------- */
+
+@media (max-width: 599px) {
+  .stage { gap: var(--s-6); padding: var(--s-5) var(--s-4); }
+  .stage__steps { gap: var(--s-2) var(--s-4); }
+  .stage__step { font-size: 0.75rem; }
+}
+
+/* Landscape phones have almost no vertical room — shrink the type so the
+   button stays reachable without scrolling. */
+@media (max-height: 560px) and (orientation: landscape) {
+  .stage { gap: var(--s-4); }
+  .stage__headline { font-size: clamp(1.5rem, 5vh, 2.25rem); }
+  .stage__blurb, .stage__steps { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .stage__eyebrow,
-  .stage__line,
+  .stage__headline,
   .stage__blurb,
   .stage__action,
+  .stage__caption,
   .stage__step { animation: none; }
-}
-
-/* --- Responsive ---------------------------------------------------------- */
-
-/* Below a laptop the rail drops under the headline and becomes a full-width
-   list rather than trying to survive as a squeezed column. */
-@media (max-width: 899px) {
-  .stage {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: start;
-    gap: var(--s-7);
-    padding: var(--s-7) var(--s-4) var(--s-6);
-  }
-  .stage__lead { max-inline-size: none; }
-  .stage__headline { font-variation-settings: 'wdth' 100; }
-  .stage__rail { align-self: start; }
-}
-
-/* Landscape phones have almost no vertical room — tighten everything so the
-   button stays reachable without scrolling. */
-@media (max-height: 520px) and (orientation: landscape) {
-  .stage { padding-block: var(--s-5); gap: var(--s-5); }
-  .stage__headline { font-size: clamp(2rem, 6vh, 3rem); }
 }

@@ -1,111 +1,118 @@
 /* ============================================================================
    DESIGN TOKENS
-   Single source of truth for colour, type, space, motion and layering.
-   Nothing in the app should hardcode a hex value — always reference a token.
+   One source of truth for colour, type, space, motion and layering.
+   Nothing else in the app should hardcode a value — always reference a token.
 
-   Direction: "concert screen". Near-black stage, one acid accent, film grain,
-   monospace instrumentation. Deliberately dark-only: this is a single
-   committed look, not a themeable product surface.
+   Direction: a dark, lit stage. Deep near-black surfaces, one warm-bright
+   accent used as *light* (glows, gradients, gentle fills) rather than as flat
+   blocks, generous radii, and motion that settles rather than snaps.
    ========================================================================== */
 
 :root {
-  /* --- Colour ------------------------------------------------------------
-     Near-black is #0A0A0B rather than pure #000 so the grain overlay has
-     something to sit on and the screen reads as film, not as a void.
-     The off-white is warm (#F2F2EF) for the same reason. */
-  --c-bg:          #0A0A0B;
-  --c-bg-raised:   #121214;
-  --c-bg-sunken:   #060607;
+  /* --- Surfaces ----------------------------------------------------------
+     Not pure black. A hint of blue in the shadows makes the accent read as
+     warm by contrast, and gives the grain something to sit on. */
+  --c-bg:        #0A0A0D;
+  --c-bg-1:      #101015;
+  --c-bg-2:      #17171E;
+  --c-bg-sunken: #060608;
 
-  --c-fg:          #F2F2EF;               /* 18.1:1 on --c-bg  */
-  --c-fg-mute:     rgb(242 242 239 / 0.56); /* ~7.0:1 — metadata, AA body  */
-  --c-fg-dim:      rgb(242 242 239 / 0.40); /* ~3.6:1 — large text only    */
-  --c-fg-ghost:    rgb(242 242 239 / 0.16); /* decorative, never text      */
+  /* --- Text --------------------------------------------------------------
+     Warm off-white rather than #FFF — pure white on near-black glares. */
+  --c-fg:       #F7F6F3;                  /* 18.0:1 */
+  --c-fg-mute:  rgb(247 246 243 / 0.62);  /*  7.9:1  — small text safe */
+  --c-fg-soft:  rgb(247 246 243 / 0.44);  /*  4.5:1  — large text only  */
+  --c-fg-dim:   rgb(247 246 243 / 0.26);  /*  decorative / far lyrics   */
+  --c-fg-ghost: rgb(247 246 243 / 0.10);  /*  never text                */
 
-  /* Acid lime. Chosen over the usual AI-purple/teal: it reads as stage
-     lighting and rave-flyer print, and it is the only saturated colour in
-     the app, so it can never be mistaken for decoration. */
-  --c-accent:      #D6FF3F;
-  --c-accent-dim:  #A8CC26;
-  --c-accent-ink:  #0A0A0B;               /* text placed ON the accent */
+  /* --- Accent ------------------------------------------------------------
+     A bright chartreuse. It is the only saturated hue in the app, so it can
+     never be mistaken for decoration. The -soft and -glow variants exist so
+     it can be used as light without being shouted. */
+  --c-accent:      #C6F24E;
+  --c-accent-hi:   #E4FF8F;
+  --c-accent-deep: #8FBF2A;
+  --c-accent-ink:  #0C1200;                  /* text placed ON the accent */
+  --c-accent-glow: rgb(198 242 78 / 0.30);
+  --c-accent-veil: rgb(198 242 78 / 0.07);
 
-  --c-rec:         #FF453A;               /* the recording dot, and only that */
-  --c-danger:      #FF453A;
+  --c-rec:    #FF5C5C;                       /* recording, and only that */
+  --c-danger: #FF6B6B;
 
-  --c-line:        rgb(242 242 239 / 0.13); /* hairline rules */
-  --c-line-strong: rgb(242 242 239 / 0.26);
+  --c-line:        rgb(247 246 243 / 0.08);
+  --c-line-strong: rgb(247 246 243 / 0.16);
 
   /* --- Type --------------------------------------------------------------
-     Two families, no more. Archivo carries a width axis (62–125) which lets a
-     long lyric line condense instead of wrapping or shrinking. JetBrains Mono
-     handles every number and label so readouts never shift width as they tick. */
+     Two families. Archivo carries a width axis (62–125) so a long lyric can
+     condense instead of wrapping. JetBrains Mono handles every number so
+     readouts never change width as they tick. */
   --f-display: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
   --f-mono:    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
-  /* Fluid scale. clamp() means no breakpoint jumps in the lyric stage —
-     it scales continuously from a 375px phone to a 2560px display. */
-  --t-lyric:   clamp(2rem, 6.4vw, 5.5rem);
-  --t-display: clamp(2.5rem, 7.2vw, 6.5rem);
+  /* Fluid, so nothing jumps at a breakpoint. */
+  --t-lyric:   clamp(1.75rem, 5.2vw, 4.5rem);
+  --t-display: clamp(2.25rem, 5.4vw, 4.5rem);
   --t-title:   clamp(1.125rem, 2vw, 1.5rem);
   --t-body:    1rem;
-  --t-label:   0.75rem;    /* mono, uppercase, tracked out */
+  --t-label:   0.75rem;
   --t-micro:   0.6875rem;
 
-  --lh-lyric: 1.14;
-  --lh-tight: 1.2;
-  --lh-body:  1.55;
+  --lh-lyric: 1.16;
+  --lh-body:  1.6;
 
-  --tr-lyric: -0.03em;     /* heavy type needs negative tracking to stay tight */
-  --tr-label:  0.14em;     /* small caps need the opposite */
+  --tr-tight: -0.035em;   /* heavy display type needs negative tracking */
+  --tr-label:  0.13em;    /* small caps need the opposite */
 
-  /* --- Space -------------------------------------------------------------
-     4px base. Every margin, padding and gap is one of these. */
-  --s-1:  0.25rem;  /*  4 */
-  --s-2:  0.5rem;   /*  8 */
-  --s-3:  0.75rem;  /* 12 */
-  --s-4:  1rem;     /* 16 */
-  --s-5:  1.5rem;   /* 24 */
-  --s-6:  2rem;     /* 32 */
-  --s-7:  3rem;     /* 48 */
-  --s-8:  4rem;     /* 64 */
+  /* --- Space (4px base) --------------------------------------------------- */
+  --s-1: 0.25rem;  --s-2: 0.5rem;   --s-3: 0.75rem;  --s-4: 1rem;
+  --s-5: 1.5rem;   --s-6: 2rem;     --s-7: 3rem;     --s-8: 4rem;
 
-  /* Asymmetric page gutter — content sits off-centre on purpose. */
   --gutter:     clamp(1.25rem, 5vw, 5rem);
   --gutter-end: clamp(1.25rem, 3vw, 3rem);
+  --bar-h: 3.5rem;
 
-  --bar-h: 3.25rem;   /* status bar and transport bar are the same height */
+  /* --- Radius ------------------------------------------------------------
+     The previous build used 2px everywhere, which read as unfinished rather
+     than deliberate. Soft, consistent radii feel considered. */
+  --r-sm:   6px;
+  --r-md:   12px;
+  --r-lg:   20px;
+  --r-pill: 999px;
 
   /* --- Motion ------------------------------------------------------------
-     One rhythm for the whole app. Exits run at ~65% of entrances so the UI
-     feels responsive rather than slow. */
-  --d-fast:  120ms;
-  --d-base:  240ms;
-  --d-slow:  420ms;
-  --d-exit:  150ms;
+     One rhythm for everything. The springs overshoot slightly so movement
+     settles into place instead of stopping dead; exits are shorter than
+     entrances so the UI feels responsive. */
+  --d-fast:  140ms;
+  --d-base:  260ms;
+  --d-slow:  480ms;
+  --d-lazy:  800ms;
+  --d-exit:  170ms;
 
-  --e-out:    cubic-bezier(0.22, 1, 0.36, 1);    /* entrances, settles */
-  --e-in:     cubic-bezier(0.55, 0, 1, 0.45);    /* exits */
-  --e-spring: cubic-bezier(0.34, 1.42, 0.5, 1);  /* press feedback */
+  --e-out:    cubic-bezier(0.22, 1, 0.36, 1);      /* settles, no overshoot  */
+  --e-spring: cubic-bezier(0.34, 1.56, 0.44, 1);   /* gentle overshoot       */
+  --e-soft:   cubic-bezier(0.4, 0, 0.2, 1);        /* symmetrical, calm      */
+  --e-in:     cubic-bezier(0.55, 0, 1, 0.45);      /* exits                  */
 
-  /* --- Layering ---------------------------------------------------------- */
-  --z-stage:   0;
-  --z-bar:    10;
-  --z-overlay:20;
-  --z-grain:  30;   /* grain sits above chrome but below modals */
-  --z-modal:  40;
-  --z-toast:  50;
+  /* --- Elevation ---------------------------------------------------------
+     Shadows are near-black and generous rather than grey and tight, so they
+     read as depth on a dark surface instead of as a grey halo. */
+  --sh-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --sh-2: 0 4px 16px -4px rgb(0 0 0 / 0.5);
+  --sh-3: 0 18px 48px -12px rgb(0 0 0 / 0.7);
 
-  --radius: 2px;    /* almost square. Not a rounded-2xl in sight. */
-  --ring:   2px;    /* focus ring width */
+  /* --- Layering ----------------------------------------------------------- */
+  --z-stage: 0;  --z-bar: 10;  --z-overlay: 20;
+  --z-grain: 30; --z-modal: 40; --z-toast: 50;
+
+  --ring: 2px;
 }
 
-/* Honour the OS setting. Motion here conveys the passage of time in a song,
-   so it is reduced rather than removed entirely. */
+/* Motion here conveys the passage of time in a song, so it is reduced rather
+   than removed outright. */
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --d-fast: 1ms;
-    --d-base: 1ms;
-    --d-slow: 1ms;
-    --d-exit: 1ms;
+    --d-fast: 1ms; --d-base: 1ms; --d-slow: 1ms;
+    --d-lazy: 1ms; --d-exit: 1ms;
   }
 }

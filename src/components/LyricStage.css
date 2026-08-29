@@ -4,12 +4,12 @@
   min-block-size: 0;
   padding-inline: var(--gutter) var(--gutter-end);
 
-  /* A real scroll container. The active line is brought to the focal point
-     with scrollTo() rather than a hand-computed transform, which keeps the
-     browser in charge of geometry and lets the reader scroll back by hand. */
+  /* A real scroll container. The reel is moved with scrollTop by a hand-rolled
+     animation, which keeps the browser in charge of geometry and lets the
+     reader scroll back by hand. */
   overflow-y: auto;
-  overscroll-behavior: contain;    /* don't chain scrolling to the page */
-  scrollbar-width: none;           /* the progress hairline is the position cue */
+  overscroll-behavior: contain;
+  scrollbar-width: none;          /* the progress hairline is the position cue */
 }
 
 .lyrics::-webkit-scrollbar { display: none; }
@@ -22,12 +22,13 @@
   color: var(--c-accent);
 }
 
-/* --- The reel ------------------------------------------------------------- */
-
 .lyrics__reel {
-  /* Enough room above and below that the first and last lines can still reach
-     the focal point instead of stopping short at the edge of the container. */
-  padding-block: 42vh 58vh;
+  /* Room above and below so the first and last lines can still reach the
+     focal point instead of stopping short at the container edge. */
+  padding-block: 40vh 58vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.32em;
 }
 
 /* --- A line --------------------------------------------------------------- */
@@ -36,69 +37,87 @@
   display: block;
   inline-size: 100%;
   text-align: start;
-  padding-block: 0.18em;
-  max-inline-size: 20ch;     /* resolved at the lyric size, so roughly 20 chars */
+  padding-block: 0.1em;
+  max-inline-size: 18ch;         /* resolved at the lyric size: ~18 characters */
 
   font-family: var(--f-display);
   font-size: var(--t-lyric);
   line-height: var(--lh-lyric);
-  letter-spacing: var(--tr-lyric);
+  letter-spacing: var(--tr-tight);
   color: var(--c-fg);
 
-  font-variation-settings: 'wght' 380, 'wdth' 96;
+  font-variation-settings: 'wght' 500, 'wdth' 98;
   transform-origin: left center;
+  will-change: opacity, transform, filter;
 
   /*
-   * Only opacity, transform and colour animate.
-   *
-   * font-variation-settings is deliberately NOT in this list. Animating the
+   * font-variation-settings is deliberately NOT transitioned. Animating the
    * weight axis changes glyph widths, which rewraps the line and changes its
-   * height mid-transition — a genuine layout animation. It looked good and
-   * quietly broke scroll positioning, because the geometry kept moving after
-   * the scroll had been calculated. The weight now snaps while opacity and
-   * scale carry the transition.
+   * height mid-flight — a genuine layout animation, and it kept invalidating
+   * the scroll target. Weight snaps; opacity, scale and blur carry the motion.
    */
   transition:
-    opacity   var(--d-base) var(--e-out),
-    transform var(--d-base) var(--e-out),
+    opacity   var(--d-slow) var(--e-out),
+    transform var(--d-slow) var(--e-out),
+    filter    var(--d-slow) var(--e-out),
     color     var(--d-base) var(--e-out);
 }
 
-/* Distance from the active line drives the fade. Nearby lines stay readable so
-   you can see what is coming; distant ones recede to texture. */
-.lyrics__line[data-distance='0'] { opacity: 1;    transform: scale(1); }
-.lyrics__line[data-distance='1'] { opacity: 0.40; transform: scale(0.965); }
-.lyrics__line[data-distance='2'] { opacity: 0.24; transform: scale(0.95); }
-.lyrics__line[data-distance='3'] { opacity: 0.14; transform: scale(0.94); }
-.lyrics__line[data-distance='4'] { opacity: 0.08; transform: scale(0.94); }
+/* Distance from the active line drives opacity, scale and focus. The blur is
+   what turns a flat list into something with depth — distant lines recede
+   rather than merely dimming. */
+.lyrics__line[data-distance='0'] { opacity: 1;    transform: scale(1);     filter: none; }
+.lyrics__line[data-distance='1'] { opacity: 0.46; transform: scale(0.955); filter: blur(0.3px); }
+.lyrics__line[data-distance='2'] { opacity: 0.28; transform: scale(0.93);  filter: blur(1px); }
+.lyrics__line[data-distance='3'] { opacity: 0.18; transform: scale(0.92);  filter: blur(1.7px); }
+.lyrics__line[data-distance='4'] { opacity: 0.12; transform: scale(0.91);  filter: blur(2.3px); }
+.lyrics__line[data-distance='5'] { opacity: 0.07; transform: scale(0.91);  filter: blur(2.8px); }
 
 /* Lines already sung recede further than lines still to come. */
 .lyrics__line[data-past]:not([data-active]) { opacity: 0.16; }
-.lyrics__line[data-past][data-distance='1'] { opacity: 0.28; }
+.lyrics__line[data-past][data-distance='1'] { opacity: 0.3; }
 
 .lyrics__line[data-active] {
-  font-variation-settings: 'wght' 800, 'wdth' 104;
-  color: var(--c-fg);
+  font-variation-settings: 'wght' 760, 'wdth' 104;
+  /* A soft bloom, as if the line were lit rather than merely brighter. */
+  text-shadow: 0 0 38px rgb(247 246 243 / 0.18);
 }
 
-/* The accent marker: a short bar in the left gutter carried only by the active
-   line. It makes the current line unmistakable at a glance, and means the
-   highlight is not signalled by opacity alone. */
+/* --- Word-by-word lighting ------------------------------------------------
+   --lit is written to the active line each frame as (progress * wordCount).
+   Each word knows its own index, so the whole per-word ramp falls out of one
+   subtraction in CSS with no JavaScript per element. */
+
+.lyrics__word {
+  --local: calc(var(--lit, 0) - var(--i));
+  transition: opacity 220ms linear;
+}
+
+.lyrics__line[data-active] .lyrics__word {
+  opacity: clamp(0.34, var(--local), 1);
+}
+
+/* --- Active line marker ---------------------------------------------------
+   A small accent dot in the gutter. It means the current line is not signalled
+   by brightness alone. */
 .lyrics__line::before {
   content: '';
   position: absolute;
-  inset-inline-start: calc(var(--gutter) * -1);
-  inline-size: calc(var(--gutter) * 0.42);
-  max-inline-size: 1.5rem;
-  block-size: 3px;
-  margin-block-start: 0.58em;
+  inset-inline-start: calc(var(--gutter) * -0.55);
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--r-pill);
+  margin-block-start: 0.52em;
   background: var(--c-accent);
-  transform: scaleX(0);
-  transform-origin: left center;
-  transition: transform var(--d-base) var(--e-out);
+  box-shadow: 0 0 16px var(--c-accent-glow);
+  opacity: 0;
+  transform: scale(0.4);
+  transition:
+    opacity   var(--d-base) var(--e-out),
+    transform var(--d-base) var(--e-spring);
 }
 
-.lyrics__line[data-active]::before { transform: scaleX(1); }
+.lyrics__line[data-active]::before { opacity: 1; transform: scale(1); }
 
 /* --- Clickable lines ------------------------------------------------------ */
 
@@ -107,61 +126,62 @@
   cursor: pointer;
   background: none;
   border: none;
+  border-radius: var(--r-md);
 }
 
-.lyrics__line--seek:hover { opacity: 0.7; }
-.lyrics__line--seek[data-active]:hover { opacity: 1; }
+.lyrics__line--seek:not([data-active]):hover {
+  opacity: 0.75;
+  filter: none;
+}
 
 .lyrics__line--seek:focus-visible {
   outline: var(--ring) solid var(--c-accent);
-  outline-offset: 4px;
+  outline-offset: 6px;
 }
-
-.lyrics__text { display: inline; }
 
 /* --- Instrumental gap ----------------------------------------------------- */
 
 .lyrics__rest {
   display: flex;
-  gap: 0.5rem;
-  padding-block: 0.9em;
+  gap: 0.55rem;
+  padding-block: 0.75em;
   align-items: center;
 }
 
 .lyrics__rest span {
   inline-size: 0.5rem;
   block-size: 0.5rem;
-  border-radius: 50%;
+  border-radius: var(--r-pill);
   background: var(--c-fg-ghost);
   transition: background var(--d-base) var(--e-out);
 }
 
 .lyrics__rest[data-active] span {
   background: var(--c-accent);
-  animation: rest-pulse 1.6s var(--e-out) infinite;
+  box-shadow: 0 0 14px var(--c-accent-glow);
+  animation: rest-pulse 1.8s var(--e-soft) infinite;
 }
-.lyrics__rest[data-active] span:nth-child(2) { animation-delay: 0.2s; }
-.lyrics__rest[data-active] span:nth-child(3) { animation-delay: 0.4s; }
+.lyrics__rest[data-active] span:nth-child(2) { animation-delay: 0.22s; }
+.lyrics__rest[data-active] span:nth-child(3) { animation-delay: 0.44s; }
 
 @keyframes rest-pulse {
-  0%, 100% { opacity: 0.3; }
-  50%      { opacity: 1; }
+  0%, 100% { opacity: 0.28; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.1); }
 }
 
 /* --- Static mode ----------------------------------------------------------
-   When only unsynced lyrics exist there is no active line to follow, so every
-   line reads at the same legible weight and the user drives the scrolling. */
+   With no timings there is no active line, so every line reads at the same
+   legible weight and the reader drives the scrolling. */
 
-.lyrics[data-mode='static'] .lyrics__reel {
-  padding-block: var(--s-8) 40vh;
-}
+.lyrics[data-mode='static'] .lyrics__reel { padding-block: var(--s-8) 40vh; }
 
 .lyrics[data-mode='static'] .lyrics__line {
-  opacity: 0.82;
+  opacity: 0.86;
   transform: none;
+  filter: none;
   font-variation-settings: 'wght' 500, 'wdth' 100;
-  font-size: clamp(1.25rem, 3.2vw, 2.25rem);
-  max-inline-size: 28ch;
+  font-size: clamp(1.2rem, 3vw, 2rem);
+  max-inline-size: 30ch;
 }
 
 .lyrics[data-mode='static'] .lyrics__line::before { display: none; }
@@ -171,19 +191,19 @@
 .lyrics__fade {
   position: absolute;
   inset-inline: 0;
-  block-size: 18%;
+  block-size: 24%;
   pointer-events: none;
   z-index: var(--z-overlay);
 }
 
 .lyrics__fade--top {
   inset-block-start: 0;
-  background: linear-gradient(var(--c-bg) 12%, transparent);
+  background: linear-gradient(var(--c-bg) 6%, rgb(10 10 13 / 0.75) 42%, transparent);
 }
 
 .lyrics__fade--bottom {
   inset-block-end: 0;
-  background: linear-gradient(transparent, var(--c-bg) 88%);
+  background: linear-gradient(transparent, rgb(10 10 13 / 0.8) 55%, var(--c-bg) 94%);
 }
 
 /* --- Responsive ----------------------------------------------------------- */
@@ -191,16 +211,17 @@
 @media (max-width: 599px) {
   .lyrics { padding-inline: var(--s-4); }
   .lyrics__line { max-inline-size: none; }
-  /* No room for a gutter marker on a phone: underline the active line instead. */
+  /* No gutter for a marker on a phone — tuck it inline above the line. */
   .lyrics__line::before {
     inset-inline-start: 0;
-    inset-block-start: 100%;
-    margin-block-start: -0.3em;
-    inline-size: 2rem;
-    max-inline-size: 2rem;
+    inset-block-start: -0.35em;
+    margin-block-start: 0;
+    inline-size: 6px;
+    block-size: 6px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lyrics__rest[data-active] span { animation: none; opacity: 1; }
+  .lyrics__rest[data-active] span { animation: none; opacity: 1; transform: none; }
+  .lyrics__line { transition: opacity 1ms linear; filter: none !important; }
 }

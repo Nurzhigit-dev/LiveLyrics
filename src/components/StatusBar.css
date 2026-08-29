@@ -8,8 +8,11 @@
   block-size: var(--bar-h);
   padding-inline: var(--gutter) var(--gutter-end);
   border-block-end: 1px solid var(--c-line);
-  background: var(--c-bg);
   flex: 0 0 auto;
+  /* Frosted rather than opaque, so lyrics dissolve under it instead of being
+     cut off by a hard bar. */
+  background: rgb(10 10 13 / 0.72);
+  backdrop-filter: blur(16px) saturate(140%);
 }
 
 .statusbar__group {
@@ -21,110 +24,106 @@
 
 .statusbar__group--end { gap: var(--s-4); }
 
-.statusbar__phase { color: var(--c-fg); }
-
-.statusbar__readout { color: var(--c-fg-mute); white-space: nowrap; }
+/* --- Wordmark ------------------------------------------------------------- */
 
 .statusbar__mark {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variation-settings: 'wght' 700, 'wdth' 104;
   color: var(--c-fg);
-  letter-spacing: 0.18em;
+  white-space: nowrap;
 }
+
+.statusbar__glyph {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: var(--r-pill);
+  background: var(--c-accent);
+  box-shadow: 0 0 12px var(--c-accent-glow);
+  flex: 0 0 auto;
+}
+
+.statusbar__divider {
+  inline-size: 1px;
+  block-size: 1rem;
+  background: var(--c-line-strong);
+}
+
+.statusbar__phase { color: var(--c-fg-mute); }
+.statusbar__readout { color: var(--c-fg-mute); white-space: nowrap; }
 
 /* --- Status dot ----------------------------------------------------------- */
 
 .statusbar__dot {
-  inline-size: 7px;
-  block-size: 7px;
-  border-radius: 50%;
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: var(--r-pill);
   background: var(--c-fg-dim);
   flex: 0 0 auto;
-  transition: background var(--d-fast) var(--e-out);
+  transition: background var(--d-base) var(--e-out);
 }
 
 .statusbar__dot--listening,
 .statusbar__dot--identifying {
   background: var(--c-rec);
-  animation: pulse 1.4s var(--e-out) infinite;
+  box-shadow: 0 0 12px rgb(255 92 92 / 0.5);
+  animation: pulse 1.6s var(--e-soft) infinite;
 }
 
-.statusbar__dot--fetching { background: var(--c-accent-dim); }
-.statusbar__dot--synced   { background: var(--c-accent); }
+.statusbar__dot--fetching { background: var(--c-accent-deep); }
+.statusbar__dot--synced   { background: var(--c-accent); box-shadow: 0 0 12px var(--c-accent-glow); }
 .statusbar__dot--error,
 .statusbar__dot--nomatch  { background: var(--c-danger); }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.25; }
+  0%, 100% { opacity: 1;    transform: scale(1); }
+  50%      { opacity: 0.35; transform: scale(0.82); }
 }
 
-/* --- Input meter ----------------------------------------------------------
-   Driven by the real RMS level of the microphone, so it is genuine feedback
-   rather than decoration. */
+/* --- Input meter ---------------------------------------------------------- */
 
 .statusbar__meter {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-inline-start: var(--s-2);
 }
 
 .statusbar__seg {
-  inline-size: 3px;
-  block-size: 9px;
+  inline-size: 2px;
+  block-size: 10px;
+  border-radius: var(--r-pill);
   background: var(--c-fg-ghost);
-  /* Only opacity and colour change, and the element never resizes, so a fast
-     meter can't thrash layout. */
-  transition: background 60ms linear;
+  /* Only colour changes and the box never resizes, so a fast meter can't
+     thrash layout. */
+  transition: background 70ms linear;
 }
 
 .statusbar__seg[data-lit] { background: var(--c-accent); }
 .statusbar__seg[data-lit][data-hot] { background: var(--c-rec); }
 
-/* --- Settings button ------------------------------------------------------ */
-
-.statusbar__settings {
-  position: relative;
-  display: grid;
-  place-items: center;
-  /* Visually a 16px glyph, but a 44px target underneath it. */
-  inline-size: 2.75rem;
-  block-size: 2.75rem;
-  margin-inline: calc(var(--s-2) * -1);
-  color: var(--c-fg-mute);
-  border-radius: var(--radius);
-  transition: color var(--d-fast) var(--e-out), background var(--d-fast) var(--e-out);
-}
-
-.statusbar__settings:hover { color: var(--c-fg); background: rgb(242 242 239 / 0.06); }
-
-.statusbar__badge {
-  position: absolute;
-  inset-block-start: 0.55rem;
-  inset-inline-end: 0.55rem;
-  inline-size: 6px;
-  block-size: 6px;
-  border-radius: 50%;
-  background: var(--c-accent);
-  box-shadow: 0 0 0 2px var(--c-bg);
-}
-
 /* --- Live scan line -------------------------------------------------------
-   The one piece of ambient motion in the app, and it only runs while the mic
-   is actually open. */
+   The one piece of ambient motion in the chrome, and it only runs while the
+   microphone is actually open. */
 
 .statusbar__scan {
   position: absolute;
   inset-block-end: -1px;
   inset-inline-start: 0;
   block-size: 1px;
-  inline-size: 28%;
+  inline-size: 30%;
   background: linear-gradient(90deg, transparent, var(--c-accent), transparent);
-  animation: scan 2.1s var(--e-out) infinite;
+  animation: scan 2.4s var(--e-soft) infinite;
 }
 
 @keyframes scan {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(460%); }
+  0%   { transform: translateX(-100%); opacity: 0; }
+  20%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { transform: translateX(440%); opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -135,14 +134,12 @@
 
 /* --- Responsive ----------------------------------------------------------- */
 
-/* On a narrow phone the readouts and wordmark go first — the phase label,
-   the meter and the settings button are what actually carry state. */
 @media (max-width: 599px) {
   .statusbar { padding-inline: var(--s-4); gap: var(--s-2); }
   .statusbar__readout { display: none; }
-  .statusbar__mark { display: none; }
 }
 
 @media (max-width: 400px) {
-  .statusbar__meter { display: none; }
+  .statusbar__divider,
+  .statusbar__phase { display: none; }
 }

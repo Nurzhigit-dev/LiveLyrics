@@ -2,26 +2,34 @@
   position: relative;
   z-index: var(--z-bar);
   flex: 0 0 auto;
-  background: var(--c-bg);
+  /* Frosted, matching the status bar, so lyrics dissolve under it rather than
+     being cut off by a hard edge. */
+  background: rgb(10 10 13 / 0.72);
+  backdrop-filter: blur(16px) saturate(140%);
 }
 
-/* --- Progress hairline ---------------------------------------------------- */
+/* --- Progress hairline ----------------------------------------------------
+   Sits on the bar's top edge, doubling as the rule that separates it from
+   the stage. */
 
 .transport__track {
   position: relative;
-  block-size: 1px;
+  block-size: 2px;
   inline-size: 100%;
   background: var(--c-line);
+  overflow: hidden;
 }
 
 .transport__fill {
   position: absolute;
   inset: 0;
-  background: var(--c-accent);
+  background: linear-gradient(90deg, var(--c-accent-deep), var(--c-accent));
+  box-shadow: 0 0 12px var(--c-accent-glow);
   transform-origin: left center;
   /* scaleX rather than width: it runs on the compositor and can never trigger
-     a layout pass, even updating ten times a second. */
-  transition: transform var(--d-fast) linear;
+     a layout pass, even updating ten times a second. Linear easing because
+     it is tracking real elapsed time, not decorating a state change. */
+  transition: transform 110ms linear;
   will-change: transform;
 }
 
@@ -32,8 +40,8 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--s-4);
-  /* min-block-size, not a fixed height: the bar has to be able to grow for
-     the sync controls without clipping them. */
+  /* min-block-size, not a fixed height: the bar has to grow for the sync
+     controls without clipping them. */
   min-block-size: var(--bar-h);
   padding-block: var(--s-2);
   padding-inline: var(--gutter) var(--gutter-end);
@@ -41,29 +49,32 @@
 
 .transport__meta {
   display: flex;
-  align-items: baseline;
-  gap: var(--s-3);
+  flex-direction: column;
+  gap: 1px;
   min-inline-size: 0;   /* lets the children actually shrink and ellipsis */
 }
 
 .transport__title {
-  font-weight: 600;
+  font-weight: 650;
   font-size: 0.9375rem;
   letter-spacing: -0.01em;
+  font-variation-settings: 'wght' 650;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.transport__sep { color: var(--c-fg-ghost); flex: 0 0 auto; }
-
+/* Stacked under the title rather than beside it, so a long title and a long
+   artist name don't fight for the same row. */
 .transport__artist {
-  font-size: 0.9375rem;
+  font-size: 0.8125rem;
   color: var(--c-fg-mute);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.transport__sep { display: none; }
 
 .transport__empty { color: var(--c-fg-mute); }
 
@@ -74,7 +85,11 @@
   flex: 0 0 auto;
 }
 
-.transport__time { color: var(--c-fg-mute); flex: 0 0 auto; }
+.transport__time {
+  color: var(--c-fg-mute);
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+}
 
 /* --- Responsive ----------------------------------------------------------- */
 
@@ -83,13 +98,12 @@
 }
 
 @media (max-width: 599px) {
-  .transport__body { padding-inline: var(--s-4); gap: var(--s-2); }
-  .transport__artist,
-  .transport__sep { display: none; }
+  .transport__body { padding-inline: var(--s-4); gap: var(--s-3); }
+  .transport__artist { font-size: 0.75rem; }
 }
 
 /* Below this the timecode and the controls fight for the same space, and the
-   controls win — the position is already shown by the progress hairline. */
+   controls win — position is already shown by the progress hairline. */
 @media (max-width: 479px) {
   .transport__time { display: none; }
 }

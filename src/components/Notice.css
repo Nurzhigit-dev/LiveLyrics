@@ -1,62 +1,70 @@
 .notice {
   flex: 1 1 auto;
-  display: grid;
-  align-items: center;
   min-block-size: 0;
   overflow-y: auto;
-  padding: var(--s-7) var(--gutter-end) var(--s-7) var(--gutter);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-5);
+  padding: var(--s-7) var(--s-5);
+  text-align: center;
 }
 
 .notice__body {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--s-4);
-  max-inline-size: 42rem;
+  max-inline-size: 34rem;
 }
 
+/* Tone is carried by the chip colour, but the title text always states what
+   happened — colour is never the only signal. */
 .notice__kind {
+  padding: var(--s-2) var(--s-4);
+  border-radius: var(--r-pill);
+  background: rgb(247 246 243 / 0.05);
+  border: 1px solid var(--c-line-strong);
   color: var(--c-fg-mute);
-  padding-block-end: var(--s-3);
-  border-block-end: 1px solid var(--c-line-strong);
-  inline-size: 100%;
 }
 
-/* Tone is carried by an icon-free label plus the border colour, and the title
-   text always says what happened — colour is never the only signal. */
 .notice[data-tone='danger'] .notice__kind {
   color: var(--c-danger);
-  border-block-end-color: var(--c-danger);
+  background: rgb(255 107 107 / 0.08);
+  border-color: rgb(255 107 107 / 0.28);
 }
 
 .notice__title {
-  font-size: clamp(1.75rem, 4.5vw, 3.25rem);
-  font-weight: 800;
-  line-height: 1.05;
-  letter-spacing: var(--tr-lyric);
-  font-variation-settings: 'wght' 800, 'wdth' 104;
+  font-size: clamp(1.75rem, 4.2vw, 3rem);
+  font-weight: 700;
+  line-height: 1.06;
+  letter-spacing: var(--tr-tight);
+  font-variation-settings: 'wght' 700, 'wdth' 100;
   text-wrap: balance;
-  max-inline-size: 18ch;
+  max-inline-size: 20ch;
 }
 
 .notice__detail {
   font-size: clamp(0.9375rem, 1.1vw, 1.0625rem);
   line-height: var(--lh-body);
   color: var(--c-fg-mute);
-  max-inline-size: 52ch;
+  max-inline-size: 46ch;
+  text-wrap: pretty;
 }
 
 .notice__actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: var(--s-3);
   margin-block-start: var(--s-3);
 }
 
 .notice__btn {
   min-block-size: 3rem;
-  padding-inline: var(--s-5);
-  border-radius: var(--radius);
+  padding-inline: var(--s-6);
+  border-radius: var(--r-pill);
   font-family: var(--f-mono);
   font-size: var(--t-label);
   font-weight: 700;
@@ -67,20 +75,45 @@
   transition:
     background var(--d-fast) var(--e-out),
     color      var(--d-fast) var(--e-out),
+    box-shadow var(--d-base) var(--e-out),
     transform  var(--d-fast) var(--e-spring);
 }
 
-.notice__btn:hover { color: var(--c-fg); box-shadow: inset 0 0 0 1px var(--c-fg); }
-.notice__btn:active { transform: scale(0.98); }
+.notice__btn:hover {
+  color: var(--c-fg);
+  background: rgb(247 246 243 / 0.06);
+  box-shadow: inset 0 0 0 1px var(--c-line-strong);
+}
+.notice__btn:active { transform: scale(0.97); }
 
 .notice__btn--go {
   background: var(--c-accent);
   color: var(--c-accent-ink);
-  box-shadow: none;
+  box-shadow: 0 12px 32px -14px var(--c-accent-glow);
 }
-.notice__btn--go:hover { background: var(--c-fg); color: var(--c-accent-ink); box-shadow: none; }
+.notice__btn--go:hover {
+  background: var(--c-accent-hi);
+  color: var(--c-accent-ink);
+  box-shadow: 0 16px 40px -12px var(--c-accent-glow);
+}
+
+.notice__body > * {
+  animation: notice-rise var(--d-slow) var(--e-out) backwards;
+}
+.notice__body > *:nth-child(2) { animation-delay: 60ms; }
+.notice__body > *:nth-child(3) { animation-delay: 120ms; }
+.notice__body > *:nth-child(4) { animation-delay: 180ms; }
+
+@keyframes notice-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
 
 @media (max-width: 599px) {
   .notice { padding: var(--s-6) var(--s-4); }
-  .notice__btn { flex: 1 1 auto; }
+  .notice__btn { flex: 1 1 auto; padding-inline: var(--s-4); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notice__body > * { animation: none; }
 }

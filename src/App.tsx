@@ -1,69 +1,62 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Grain } from './components/Grain';
 import { StatusBar } from './components/StatusBar';
 import { Stage } from './components/Stage';
 import { LyricStage } from './components/LyricStage';
 import { Notice } from './components/Notice';
-import { Settings } from './components/Settings';
 import { TransportBar } from './components/TransportBar';
-import { SyncControls } from './components/SyncControls';
+import { SyncControls, NUDGE_STEP } from './components/SyncControls';
 import { useSongClock, type Anchor } from './hooks/useSongClock';
 import { captureSample, MicError } from './lib/audio';
-import { identify, IdentifyError, type Credentials } from './lib/acrcloud';
+import { identify, IdentifyError } from './lib/identify';
 import { fetchLyrics, LyricsError } from './lib/lrclib';
 import { findActiveIndex, parseLrc } from './lib/lrc';
-import { clearCredentials, loadCredentials, saveCredentials } from './lib/credentials';
 import type { AppPhase, LyricLine, Track } from './types';
 
 /**
  * How much audio to record before asking what it is.
  *
- * A trade-off: shorter feels snappier but gives the fingerprinter less to work
- * with in a noisy room. Eight seconds is around the point where accuracy stops
- * improving much, and it keeps the upload near 130 KB at 8 kHz mono.
+ * Shorter feels snappier but gives the fingerprinter less to work with in a
+ * noisy room. Seven seconds is around where accuracy stops improving much,
+ * and it keeps the upload near 110 KB at 8 kHz mono.
  */
-const SAMPLE_SECONDS = 8;
+const SAMPLE_SECONDS = 7;
 
 interface NoticeState {
   kind: string;
   title: string;
   detail?: string;
   tone?: 'neutral' | 'danger';
-  /** True when the fix is to go and fix the keys. */
-  keysAtFault?: boolean;
 }
 
 export default function App() {
   const [phase, setPhase] = useState<AppPhase>('idle');
-  const [creds, setCreds] = useState<Credentials | null>(() => loadCredentials());
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
   const [track, setTrack] = useState<Track | null>(null);
   const [lines, setLines] = useState<LyricLine[]>([]);
   const [synced, setSynced] = useState(true);
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const [nudge, setNudge] = useState(0);
-
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [level, setLevel] = useState(0);
 
-  /** Lets the Stop button cancel a capture that is already in flight. */
+  /** Lets Stop cancel a capture that is already in flight. */
   const abortRef = useRef<AbortController | null>(null);
 
-  const position = useSongClock(anchor, nudge);
+  const { position, getPosition } = useSongClock(anchor, nudge);
   const activeIndex = useMemo(
     () => (synced ? findActiveIndex(lines, position) : -1),
     [synced, lines, position],
   );
 
   const busy = phase === 'listening' || phase === 'identifying' || phase === 'fetching';
+  const showLyrics = phase === 'synced' && lines.length > 0;
 
   /** Turns any thrown error into a screen with a way forward. */
   const reportError = useCallback((err: unknown) => {
     if (err instanceof MicError) {
       setNotice({
         kind: 'microphone',
-        title: 'The microphone is not available.',
+        title: 'I can’t hear anything.',
         detail: err.detail.message,
         tone: 'danger',
       });
@@ -75,24 +68,24 @@ export default function App() {
       if (err.kind === 'nomatch') {
         setNotice({
           kind: 'no match',
-          title: 'Heard it, but could not place it.',
+          title: 'Heard it, couldn’t place it.',
           detail:
-            'Background noise, a very quiet room, or a track outside the catalogue will all do this. Moving nearer the speaker helps more than turning it up.',
+            'Getting closer to the speaker helps far more than turning it up. Live takes and remixes often aren’t in the catalogue at all.',
         });
         setPhase('nomatch');
         return;
       }
       setNotice({
-        kind: err.kind === 'quota' ? 'quota' : err.kind === 'auth' ? 'keys' : 'network',
+        kind:
+          err.kind === 'quota' ? 'limit reached'
+          : err.kind === 'unconfigured' ? 'setup'
+          : 'connection',
         title:
-          err.kind === 'auth'
-            ? 'Those keys were rejected.'
-            : err.kind === 'quota'
-              ? 'Out of recognitions for this month.'
-              : 'Could not reach the recogniser.',
+          err.kind === 'quota' ? 'Out of recognitions this month.'
+          : err.kind === 'unconfigured' ? 'Recognition isn’t set up yet.'
+          : 'Couldn’t reach the server.',
         detail: err.message,
         tone: 'danger',
-        keysAtFault: err.kind === 'auth',
       });
       setPhase('error');
       return;
@@ -102,11 +95,9 @@ export default function App() {
       setNotice({
         kind: err.kind === 'instrumental' ? 'instrumental' : 'no lyrics',
         title:
-          err.kind === 'instrumental'
-            ? 'This one has no words.'
-            : err.kind === 'network'
-              ? 'Could not reach the lyric database.'
-              : 'No lyrics on file for this track.',
+          err.kind === 'instrumental' ? 'This one has no words.'
+          : err.kind === 'network' ? 'Couldn’t reach the lyric database.'
+          : 'No lyrics on file for this track.',
         detail: err.message,
       });
       setPhase('nomatch');
@@ -124,11 +115,6 @@ export default function App() {
 
   /** The whole pipeline: record, identify, fetch lyrics, start the clock. */
   const run = useCallback(async () => {
-    if (!creds) {
-      setSettingsOpen(true);
-      return;
-    }
-
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -147,7 +133,7 @@ export default function App() {
       if (controller.signal.aborted) return;
 
       setPhase('identifying');
-      const matched = await identify(creds, capture.wav);
+      const matched = await identify(capture.wav);
       if (controller.signal.aborted) return;
 
       setTrack(matched);
@@ -164,8 +150,8 @@ export default function App() {
       if (record.syncedLyrics) {
         setLines(parseLrc(record.syncedLyrics).lines);
         setSynced(true);
-        // Anchored to when RECORDING STARTED, not to now — that is what makes
-        // the round-trip latency cancel out instead of accumulating.
+        // Anchored to when RECORDING STARTED, not to now, so the round trip
+        // cancels out instead of accumulating into a permanent lag.
         setAnchor({ startedAt: capture.startedAt, songPosition: matched.offset ?? 0 });
       } else {
         setLines(
@@ -180,8 +166,7 @@ export default function App() {
       setPhase('synced');
     } catch (err) {
       const cancelled =
-        controller.signal.aborted ||
-        (err instanceof DOMException && err.name === 'AbortError');
+        controller.signal.aborted || (err instanceof DOMException && err.name === 'AbortError');
       if (cancelled) {
         setPhase('idle');
         return;
@@ -191,7 +176,7 @@ export default function App() {
       setLevel(0);
       if (abortRef.current === controller) abortRef.current = null;
     }
-  }, [creds, reportError]);
+  }, [reportError]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -214,47 +199,67 @@ export default function App() {
     setPhase('idle');
   }, []);
 
-  /** Clicking a lyric line says "the song is here, right now". */
-  const seekToLine = useCallback(
-    (index: number) => {
-      const line = lines[index];
-      if (!line) return;
-      setNudge(0);
-      setAnchor({ startedAt: performance.now(), songPosition: line.time });
-    },
-    [lines],
-  );
+  const bumpNudge = useCallback((delta: number) => {
+    setNudge((n) => Math.round((n + delta) * 100) / 100);
+  }, []);
 
-  // Readouts only ever show values that are actually true right now.
+  /** Clicking a lyric line says "the song is here, right now". */
+  const seekToLine = useCallback((index: number) => {
+    const line = lines[index];
+    if (!line) return;
+    setNudge(0);
+    setAnchor({ startedAt: performance.now(), songPosition: line.time });
+  }, [lines]);
+
+  /*
+   * Arrow keys nudge the timing while lyrics are on screen.
+   *
+   * Correcting drift is the single most common thing anyone will want to do
+   * here, and hunting for a small button in the corner every time is friction.
+   * The guard skips the shortcut when focus is in a text field so it can never
+   * swallow a real interaction.
+   */
+  useEffect(() => {
+    if (!showLyrics || !synced) return;
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
+
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        bumpNudge(-NUDGE_STEP);
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        bumpNudge(NUDGE_STEP);
+      }
+    };
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showLyrics, synced, bumpNudge]);
+
+  // Readouts only ever show what is actually true right now.
   const readouts = useMemo(() => {
     const out: string[] = [];
     if (phase === 'listening') out.push(`${SAMPLE_SECONDS}s sample`);
-    if (phase === 'synced' && synced && nudge !== 0) {
-      out.push(`${nudge > 0 ? '+' : ''}${nudge.toFixed(1)}s`);
-    }
-    if (phase === 'synced' && !synced) out.push('unsynced');
+    if (showLyrics && !synced) out.push('unsynced');
     return out;
-  }, [phase, synced, nudge]);
-
-  const showLyrics = phase === 'synced' && lines.length > 0;
+  }, [phase, showLyrics, synced]);
 
   return (
     <>
       <a className="skip-link" href="#main">Skip to content</a>
 
-      <StatusBar
-        phase={phase}
-        readouts={readouts}
-        level={level}
-        onOpenSettings={() => setSettingsOpen(true)}
-        hasKeys={Boolean(creds)}
-      />
+      <StatusBar phase={phase} readouts={readouts} level={level} />
 
       {showLyrics ? (
         <LyricStage
           lines={lines}
           activeIndex={activeIndex}
           synced={synced}
+          getPosition={getPosition}
           onSeekToLine={synced ? seekToLine : undefined}
         />
       ) : notice ? (
@@ -264,14 +269,10 @@ export default function App() {
           detail={notice.detail}
           tone={notice.tone}
           action={{ label: busy ? 'Listening…' : 'Try again', onClick: toggleListen }}
-          secondary={
-            notice.keysAtFault
-              ? { label: 'Edit keys', onClick: () => setSettingsOpen(true) }
-              : { label: 'Start over', onClick: reset }
-          }
+          secondary={{ label: 'Start over', onClick: reset }}
         />
       ) : (
-        <Stage onListen={toggleListen} listening={busy} phase={phase} />
+        <Stage onListen={toggleListen} listening={busy} phase={phase} level={level} />
       )}
 
       <TransportBar
@@ -282,29 +283,13 @@ export default function App() {
             <SyncControls
               nudge={nudge}
               synced={synced}
-              onNudge={(delta) => setNudge((n) => Math.round((n + delta) * 10) / 10)}
+              onNudge={bumpNudge}
               onReset={reset}
               onRelisten={toggleListen}
               busy={busy}
             />
           ) : null
         }
-      />
-
-      <Settings
-        open={settingsOpen}
-        initial={creds}
-        onSave={(next) => {
-          saveCredentials(next);
-          setCreds(next);
-          setSettingsOpen(false);
-        }}
-        onClear={() => {
-          clearCredentials();
-          setCreds(null);
-          setSettingsOpen(false);
-        }}
-        onDismiss={() => setSettingsOpen(false)}
       />
 
       <Grain />

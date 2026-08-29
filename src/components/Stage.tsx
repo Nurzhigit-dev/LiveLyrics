@@ -3,78 +3,70 @@ import { ListenButton } from './ListenButton';
 import type { AppPhase } from '../types';
 import './Stage.css';
 
-/** The three steps, written as an equipment spec sheet rather than feature cards. */
-const CHAIN = [
-  { n: '01', name: 'Capture', detail: 'A few seconds of audio from the microphone. Nothing is stored.' },
-  { n: '02', name: 'Match',   detail: 'An acoustic fingerprint returns the track and how far into it you are.' },
-  { n: '03', name: 'Sync',    detail: 'Timed lines are pulled from LRCLIB and driven by that offset.' },
-];
-
 /** What the caption under the button says at each stage of the pipeline. */
-const BUSY_CAPTION: Partial<Record<AppPhase, string>> = {
-  listening: 'Recording — hold steady, and get near the speaker.',
-  identifying: 'Matching the fingerprint…',
-  fetching: 'Found it. Fetching the timed lyrics…',
+const CAPTION: Partial<Record<AppPhase, string>> = {
+  listening: 'Listening — hold steady and stay near the speaker',
+  identifying: 'Working out what this is…',
+  fetching: 'Got it. Fetching the timed lyrics…',
 };
+
+const STEPS = [
+  { name: 'Hears', detail: 'a few seconds through your microphone' },
+  { name: 'Knows', detail: 'the track and how far into it you are' },
+  { name: 'Follows', detail: 'every line, in time with the room' },
+];
 
 interface Props {
   onListen: () => void;
-  /** True while the pipeline is running, so the button shows its stop state. */
   listening: boolean;
   phase: AppPhase;
+  level: number;
 }
 
 /**
  * The idle screen.
  *
- * The grid is deliberately asymmetric — headline hard against the left gutter,
- * technical rail hanging off the right — because centred-hero-with-subtitle is
- * the single most template-looking arrangement on the web.
+ * There is exactly one thing to do here, so the layout says so: a single large
+ * control in the middle, a line of copy above it, and the explanation demoted
+ * to a quiet row underneath. An earlier version buried the button in the
+ * corner of a poster layout, which looked striking and read as decoration.
  */
-export function Stage({ onListen, listening, phase }: Props) {
-  const caption = BUSY_CAPTION[phase];
-  const step = (i: number) => ({ '--i': i }) as CSSProperties;
+export function Stage({ onListen, listening, phase, level }: Props) {
+  const caption = CAPTION[phase];
+  const delay = (i: number) => ({ '--i': i }) as CSSProperties;
 
   return (
-    <main className="stage" id="main">
-      <div className="stage__lead">
-        <p className="label stage__eyebrow" style={step(0)}>Real-time lyric sync</p>
+    <main className="stage screen-in" id="main">
+      <div className="stage__center">
+        <p className="label stage__eyebrow" style={delay(0)}>Real-time lyric sync</p>
 
-        {/* One <h1> for the page. The line breaks are structural to the poster
-            layout, so each line is a span and the whole reads as one heading. */}
-        <h1 className="stage__headline">
-          <span className="stage__line" style={step(1)}>Play</span>
-          <span className="stage__line" style={step(2)}>it out</span>
-          <span className="stage__line stage__line--accent" style={step(3)}>loud.</span>
+        <h1 className="stage__headline" style={delay(1)}>
+          Play something <em>out loud</em>
         </h1>
 
-        <p className="stage__blurb" style={step(4)}>
-          Point this at whatever is playing in the room. It listens for a moment,
-          works out which song it is <em>and how far in you already are</em>, then
-          puts the words on screen in time with the music.
+        <p className="stage__blurb" style={delay(2)}>
+          Point this at whatever is playing. It works out the song and where you
+          are in it, then follows along.
         </p>
 
-        <div className="stage__action" style={step(5)}>
-          <ListenButton onClick={onListen} active={listening} />
-          {/* aria-live so the caption's progress is announced as it changes,
-              rather than only being visible. */}
-          <p className="stage__consent" aria-live="polite">
-            {caption ?? 'Your browser will ask for microphone access first.'}
-          </p>
+        <div className="stage__action" style={delay(3)}>
+          <ListenButton onClick={onListen} active={listening} level={level} />
         </div>
+
+        {/* aria-live so progress is announced as it changes, not just shown. */}
+        <p className="stage__caption" aria-live="polite" style={delay(4)}>
+          {caption ?? 'Your browser will ask for microphone access'}
+        </p>
       </div>
 
-      <aside className="stage__rail" aria-label="How it works">
-        <ol className="stage__chain">
-          {CHAIN.map((entry, i) => (
-            <li key={entry.n} className="stage__step" style={step(6 + i)}>
-              <span className="label readout stage__step-n">{entry.n}</span>
-              <span className="stage__step-name">{entry.name}</span>
-              <span className="stage__step-detail">{entry.detail}</span>
-            </li>
-          ))}
-        </ol>
-      </aside>
+      <ol className="stage__steps" aria-label="How it works">
+        {STEPS.map((step, i) => (
+          <li key={step.name} className="stage__step" style={delay(5 + i)}>
+            <span className="stage__step-name">{step.name}</span>
+            <span className="stage__step-detail">{step.detail}</span>
+          </li>
+        ))}
+      </ol>
     </main>
   );
 }

@@ -53,12 +53,14 @@ export function TransportBar({ track, position = 0, actions }: Props) {
         <div className="transport__meta">
           {hasTrack ? (
             <>
+              {/* Stacked rather than on one row: a long title and a long
+                  artist name would otherwise compete for the same space and
+                  both end up truncated. */}
               <span className="transport__title">{track!.title}</span>
-              <span className="transport__sep" aria-hidden="true">—</span>
               <span className="transport__artist">{track!.artist}</span>
             </>
           ) : (
-            <span className="label transport__empty">No signal</span>
+            <span className="label transport__empty">Nothing playing</span>
           )}
         </div>
 
