@@ -4,12 +4,8 @@
   min-block-size: 0;
   padding-inline: var(--gutter) var(--gutter-end);
 
-  /* A real scroll container. The reel is moved with scrollTop by a hand-rolled
-     animation, which keeps the browser in charge of geometry and lets the
-     reader scroll back by hand. */
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;          /* the progress hairline is the position cue */
+  /* The reel is moved by transform, so the viewport itself never scrolls. */
+  overflow: hidden;
 }
 
 .lyrics::-webkit-scrollbar { display: none; }
@@ -23,12 +19,30 @@
 }
 
 .lyrics__reel {
+  position: relative;
   /* Room above and below so the first and last lines can still reach the
      focal point instead of stopping short at the container edge. */
   padding-block: 40vh 58vh;
   display: flex;
   flex-direction: column;
   gap: 0.42em;
+
+  /*
+   * The glide between lines. A CSS transition on transform is composited off
+   * the main thread, so it stays smooth even while React is working — which a
+   * per-frame JavaScript scroll animation cannot do.
+   *
+   * The curve leaves briskly and lands with a long, soft tail; a symmetrical
+   * ease reads as mechanical at this distance and duration.
+   */
+  transform: translate3d(0, 0, 0);
+  transition: transform 900ms cubic-bezier(0.22, 0.7, 0.14, 1);
+  will-change: transform;
+}
+
+.lyrics[data-mode='static'] .lyrics__reel {
+  transition: none;
+  will-change: auto;
 }
 
 /* --- A line --------------------------------------------------------------- */
@@ -171,6 +185,8 @@
    With no timings there is no active line, so every line reads at the same
    legible weight and the reader drives the scrolling. */
 
+/* Without timings there is nothing to follow, so the reader scrolls by hand. */
+.lyrics[data-mode='static'] { overflow-y: auto; overscroll-behavior: contain; }
 .lyrics[data-mode='static'] .lyrics__reel { padding-block: var(--s-8) 40vh; }
 
 .lyrics[data-mode='static'] .lyrics__line {
@@ -223,4 +239,6 @@
 @media (prefers-reduced-motion: reduce) {
   .lyrics__rest[data-active] span { animation: none; opacity: 1; transform: none; }
   .lyrics__line { transition: opacity 1ms linear; }
+  /* Jump straight to the line rather than gliding to it. */
+  .lyrics__reel { transition: none; }
 }

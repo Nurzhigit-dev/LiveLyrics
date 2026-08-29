@@ -107,14 +107,50 @@ export async function identify(audio, credentials, timeoutMs = 15000) {
     return { ok: false, kind: 'nomatch', message: 'Matched something with no track details.' };
   }
 
+  /*
+   * Work out where the song was when RECORDING STARTED.
+   *
+   * play_offset_ms alone is not that. The recogniser reports which slice of
+   * the submitted sample it actually matched (sample_begin_time_offset_ms)
+   * and where that slice sits in the reference (db_begin_time_offset_ms). If
+   * the first few seconds of the recording were too noisy to use, the match
+   * begins partway through the sample — and treating its position as the
+   * position at t=0 pushes the lyrics ahead by however much was skipped.
+   *
+   * Subtracting the sample-side offset converts it back to "position at the
+   * start of the recording", which is what the clock is anchored to.
+   */
+  const dbBegin = Number(music.db_begin_time_offset_ms);
+  const sampleBegin = Number(music.sample_begin_time_offset_ms);
+  const playOffset = Number(music.play_offset_ms);
+
+  let offsetMs;
+  if (Number.isFinite(dbBegin) && Number.isFinite(sampleBegin)) {
+    offsetMs = dbBegin - sampleBegin;
+  } else if (Number.isFinite(playOffset) && Number.isFinite(sampleBegin)) {
+    offsetMs = playOffset - sampleBegin;
+  } else {
+    offsetMs = Number.isFinite(playOffset) ? playOffset : 0;
+  }
+
+  const durationSec = music.duration_ms ? music.duration_ms / 1000 : undefined;
+  let offset = Math.max(0, offsetMs / 1000);
+
+  // A match that claims to sit past the end of the track is not a usable
+  // position. Fall back to the start rather than dropping the listener into
+  // a spot the song never reaches.
+  if (durationSec && offset > durationSec) offset = 0;
+
   return {
     ok: true,
     track: {
       title: music.title,
       artist: music.artists?.map((a) => a.name).filter(Boolean).join(', ') || 'Unknown artist',
       album: music.album?.name ?? undefined,
-      duration: music.duration_ms ? music.duration_ms / 1000 : undefined,
-      offset: music.play_offset_ms ? music.play_offset_ms / 1000 : 0,
+      duration: durationSec,
+      offset,
+      /** How confident the recogniser was, 0-100. Surfaced so the UI can warn. */
+      score: Number.isFinite(Number(music.score)) ? Number(music.score) : undefined,
     },
   };
 }

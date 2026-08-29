@@ -9,6 +9,7 @@ import { TransportBar } from './components/TransportBar';
 import { SyncControls, NUDGE_STEP } from './components/SyncControls';
 import { useSongClock, type Anchor } from './hooks/useSongClock';
 import { captureSample, MicError } from './lib/audio';
+import { startMonitor, type Monitor } from './lib/monitor';
 import { identify, IdentifyError } from './lib/identify';
 import { fetchLyrics, LyricsError } from './lib/lrclib';
 import { findActiveIndex, parseLrc } from './lib/lrc';
@@ -18,11 +19,14 @@ import type { AppPhase, LyricLine, Track } from './types';
 /**
  * How much audio to record before asking what it is.
  *
- * Shorter feels snappier but gives the fingerprinter less to work with in a
- * noisy room. Seven seconds is around where accuracy stops improving much,
- * and it keeps the upload near 110 KB at 8 kHz mono.
+ * Raised from seven seconds specifically to fight wrong-section matches.
+ * Songs repeat themselves — choruses especially — so a short, noisy sample
+ * can align just as well against a later repeat as against the part actually
+ * playing, which lands the listener in the middle of a track they just
+ * started. More audio makes the fingerprint more distinctive and that
+ * ambiguity much less likely. Ten seconds is still only ~160 KB at 8 kHz mono.
  */
-const SAMPLE_SECONDS = 7;
+const SAMPLE_SECONDS = 10;
 
 interface NoticeState {
   kind: string;
@@ -44,17 +48,60 @@ export default function App() {
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [level, setLevel] = useState(0);
 
+  /** True when the room has gone quiet and the lyrics are being held. */
+  const [paused, setPaused] = useState(false);
+  /** The continuous level monitor that watches for the music stopping. */
+  const monitorRef = useRef<Monitor | null>(null);
+
   /** Lets Stop cancel a capture that is already in flight. */
   const abortRef = useRef<AbortController | null>(null);
 
-  const { position, getPosition } = useSongClock(anchor, calibration);
+  const { position, getPosition } = useSongClock(anchor, calibration, !paused);
   const activeIndex = useMemo(
     () => (synced ? findActiveIndex(lines, position) : -1),
     [synced, lines, position],
   );
 
   const busy = phase === 'listening' || phase === 'identifying' || phase === 'fetching';
-  const showLyrics = phase === 'synced' && lines.length > 0;
+  const showLyrics = (phase === 'synced' || phase === 'paused') && lines.length > 0;
+
+  const stopTracking = useCallback(() => {
+    monitorRef.current?.stop();
+    monitorRef.current = null;
+    setPaused(false);
+  }, []);
+
+  /**
+   * Watches the room after a match, so the lyrics follow the music rather than
+   * running on regardless.
+   *
+   * When the level stays at room tone for a couple of seconds the clock is
+   * held where it is; when sound returns it picks up from exactly that point.
+   * Deliberately no re-identification on resume: pausing and un-pausing the
+   * same track is the common case, it costs nothing, and it is instant. If the
+   * track actually changed, Again re-reads the room.
+   */
+  const startTracking = useCallback(async () => {
+    monitorRef.current?.stop();
+    monitorRef.current = null;
+    try {
+      monitorRef.current = await startMonitor({
+        onLevel: setLevel,
+        onQuiet: () => { setPaused(true); setPhase('paused'); },
+        onSound: () => { setPaused(false); setPhase('synced'); },
+      });
+    } catch {
+      // Tracking is an enhancement. If the mic can't be reopened for it, the
+      // lyrics still run — they just won't notice the music stopping.
+      monitorRef.current = null;
+    }
+  }, []);
+
+  // Tear the monitor down whenever we leave the lyric view, and on unmount.
+  useEffect(() => {
+    if (!showLyrics) stopTracking();
+    return () => { monitorRef.current?.stop(); monitorRef.current = null; };
+  }, [showLyrics, stopTracking]);
 
   /** Turns any thrown error into a screen with a way forward. */
   const reportError = useCallback((err: unknown) => {
@@ -125,6 +172,8 @@ export default function App() {
 
     setNotice(null);
     setAnchor(null);
+    // The monitor holds an open stream; release it before recording.
+    stopTracking();
     setPhase('listening');
 
     try {
@@ -168,6 +217,7 @@ export default function App() {
       }
 
       setPhase('synced');
+      void startTracking();
     } catch (err) {
       const cancelled =
         controller.signal.aborted || (err instanceof DOMException && err.name === 'AbortError');
@@ -180,14 +230,15 @@ export default function App() {
       setLevel(0);
       if (abortRef.current === controller) abortRef.current = null;
     }
-  }, [reportError]);
+  }, [reportError, stopTracking, startTracking]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
+    stopTracking();
     setLevel(0);
     setPhase('idle');
-  }, []);
+  }, [stopTracking]);
 
   const toggleListen = useCallback(() => {
     if (busy) stop();
@@ -199,9 +250,10 @@ export default function App() {
     setTrack(null);
     setLines([]);
     setAnchor(null);
+    stopTracking();
     setPhase('idle');
     // Calibration deliberately survives: it describes this device, not this song.
-  }, []);
+  }, [stopTracking]);
 
   const bumpNudge = useCallback((delta: number) => {
     setCalibration((current) => {

@@ -75,6 +75,9 @@
 }
 
 .statusbar__dot--fetching { background: var(--c-accent-deep); }
+/* Held, not broken: the same dot as in-sync but dimmed and still, so the state
+   reads as waiting rather than as a failure. */
+.statusbar__dot--paused   { background: var(--c-fg-soft); }
 .statusbar__dot--synced   { background: var(--c-accent); box-shadow: 0 0 12px var(--c-accent-glow); }
 .statusbar__dot--error,
 .statusbar__dot--nomatch  { background: var(--c-danger); }

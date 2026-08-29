@@ -7,6 +7,7 @@ const PHASE_LABEL: Record<AppPhase, string> = {
   identifying: 'matching',
   fetching: 'loading lyrics',
   synced: 'in sync',
+  paused: 'music stopped',
   nomatch: 'no match',
   error: 'error',
 };

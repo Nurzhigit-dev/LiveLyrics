@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { LyricLine } from '../types';
 import './LyricStage.css';
 
@@ -21,8 +21,6 @@ const FOCAL_RATIO = 0.40;
 /** Past this many lines away, everything looks the same. */
 const MAX_DISTANCE = 5;
 
-/** How long the reel takes to glide to a new line. */
-const SCROLL_MS = 760;
 
 /** Assumed length of the final line, which has no following timestamp. */
 const LAST_LINE_SECONDS = 4;
@@ -109,71 +107,53 @@ const LyricRow = memo(function LyricRow({
 function LyricStageInner({ lines, activeIndex, synced, getPosition, onSeekToLine }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<Array<HTMLElement | null>>([]);
-  const scrollFrame = useRef(0);
   const litFrame = useRef(0);
+
+  /** How far the reel is shifted, in pixels. Negative moves it upward. */
+  const [shift, setShift] = useState(0);
 
   // Stable identity, so memoised rows are not invalidated on every render.
   const attach = useCallback((index: number, el: HTMLElement | null) => {
     lineRefs.current[index] = el;
   }, []);
 
-  const reduced = () =>
-    typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-
   /**
-   * Glides the reel so the active line lands on the focal point.
+   * Positions the reel so the active line sits on the focal point.
    *
-   * Hand-rolled rather than `scrollTo({behavior:'smooth'})`, whose curve and
-   * duration are platform-defined and cannot be matched to the rest of the
-   * app's motion. Geometry is read live from the rendered boxes each time, so
-   * nothing goes stale when the webfont swaps in or a line rewraps.
+   * The movement itself is a CSS transition on `transform`, not a JavaScript
+   * animation. That is the whole point of this rewrite: the previous version
+   * wrote `scrollTop` on every frame from a requestAnimationFrame loop, and
+   * scroll offsets cannot be handed to the compositor — every step ran on the
+   * main thread and competed with React, so the glide between lines never felt
+   * clean. A transform transition is composited off the main thread and stays
+   * smooth even while the app is busy.
+   *
+   * Measurement uses `offsetTop`, which is a layout value and is unaffected by
+   * the transform currently applied. That means it stays correct even when a
+   * new line becomes active mid-transition — reading `getBoundingClientRect`
+   * instead would measure the element's in-flight animated position and the
+   * error would compound with every interruption.
    */
-  const glideToActive = useCallback((animate: boolean) => {
+  const align = useCallback(() => {
     if (!synced) return;
     const viewport = viewportRef.current;
     const el = lineRefs.current[Math.max(0, activeIndex)];
     if (!viewport || !el) return;
 
-    const viewportRect = viewport.getBoundingClientRect();
-    const lineRect = el.getBoundingClientRect();
-    const centre = lineRect.top + lineRect.height / 2 - viewportRect.top;
-    const target = viewport.scrollTop + centre - viewport.clientHeight * FOCAL_RATIO;
-
-    cancelAnimationFrame(scrollFrame.current);
-
-    if (!animate || reduced()) {
-      viewport.scrollTop = target;
-      return;
-    }
-
-    const from = viewport.scrollTop;
-    const delta = target - from;
-    if (Math.abs(delta) < 1) return;
-
-    const startedAt = performance.now();
-    const step = (now: number) => {
-      const t = Math.min(1, (now - startedAt) / SCROLL_MS);
-      // Quintic ease-out: leaves quickly, arrives with a long calm tail.
-      const eased = 1 - (1 - t) ** 5;
-      viewport.scrollTop = from + delta * eased;
-      if (t < 1) scrollFrame.current = requestAnimationFrame(step);
-    };
-    scrollFrame.current = requestAnimationFrame(step);
+    const focal = viewport.clientHeight * FOCAL_RATIO;
+    setShift(focal - (el.offsetTop + el.offsetHeight / 2));
   }, [activeIndex, synced]);
 
-  useLayoutEffect(() => {
-    glideToActive(true);
-    return () => cancelAnimationFrame(scrollFrame.current);
-  }, [glideToActive]);
+  // useLayoutEffect so the reel is never painted at the old position first.
+  useLayoutEffect(align, [align]);
 
-  // Re-align when geometry shifts underneath us: the webfont finishing its
+  // Re-measure when geometry shifts underneath us: the webfont finishing its
   // swap changes every line's height, and a resize changes the wrapping.
   // Neither is an activeIndex change, so neither is caught above.
   useEffect(() => {
     if (!synced) return;
     let cancelled = false;
-    const settle = () => { if (!cancelled) glideToActive(false); };
+    const settle = () => { if (!cancelled) align(); };
 
     void document.fonts?.ready.then(settle);
     window.addEventListener('resize', settle);
@@ -181,7 +161,7 @@ function LyricStageInner({ lines, activeIndex, synced, getPosition, onSeekToLine
       cancelled = true;
       window.removeEventListener('resize', settle);
     };
-  }, [glideToActive, synced]);
+  }, [align, synced]);
 
   /**
    * Lights the active line up word by word as it is sung.
@@ -235,7 +215,10 @@ function LyricStageInner({ lines, activeIndex, synced, getPosition, onSeekToLine
         <p className="label lyrics__notice">Only unsynced lyrics exist for this track</p>
       )}
 
-      <div className="lyrics__reel">
+      <div
+        className="lyrics__reel"
+        style={synced ? { transform: `translate3d(0, ${shift}px, 0)` } : undefined}
+      >
         {lines.map((line, i) => (
           <LyricRow
             key={`${line.time}-${i}`}

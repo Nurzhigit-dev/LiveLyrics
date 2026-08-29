@@ -13,6 +13,7 @@ export type AppPhase =
   | 'identifying'  // sample sent, waiting on a match
   | 'fetching'     // matched; pulling the synced lyrics
   | 'synced'       // lyrics are on screen and scrolling with the song
+  | 'paused'       // the room went quiet; the clock is held until sound returns
   | 'nomatch'      // heard something, recognised nothing
   | 'error';       // mic denied, offline, bad key, etc.
 
@@ -26,6 +27,9 @@ export interface Track {
   /** Where in the song the room was when we sampled it, in seconds.
    *  This is what makes ambient sync possible at all. */
   offset?: number;
+  /** Recogniser confidence, 0-100. A low score usually means the position
+   *  is unreliable even when the title is right. */
+  score?: number;
 }
 
 /** One timed line of a lyric file. */
