@@ -1,0 +1,18 @@
+# Netlify build configuration.
+#
+# Only needed for this platform — Vercel infers all of this automatically
+# from the project structure (Vite + an /api folder), Netlify does not.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+# A single-page app: any path that isn't a real file (i.e. isn't the API
+# route, isn't dist/assets/...) should fall through to index.html so client
+# routing doesn't 404 on refresh. There's only one route today, but this
+# keeps the site correct if that ever changes.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
