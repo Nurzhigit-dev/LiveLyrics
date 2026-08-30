@@ -16,7 +16,7 @@ import { identify, readCredentials } from './server/identify.mjs'
  */
 function identifyApi(env: Record<string, string>): Plugin {
   return {
-    name: 'lyricwave-identify-api',
+    name: 'livelyrics-identify-api',
     configureServer(server) {
       server.middlewares.use('/api/identify', async (req, res) => {
         const json = (status: number, body: unknown) => {

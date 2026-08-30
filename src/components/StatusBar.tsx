@@ -31,7 +31,7 @@ export function StatusBar({ phase, readouts = [], level = 0 }: Props) {
       <div className="statusbar__group">
         <span className="statusbar__mark">
           <span className="statusbar__glyph" aria-hidden="true" />
-          Lyricwave
+          LiveLyrics
         </span>
 
         <span className="statusbar__divider" aria-hidden="true" />
