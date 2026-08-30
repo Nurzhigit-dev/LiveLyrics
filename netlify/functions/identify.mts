@@ -23,7 +23,9 @@ export default async (req: Request) => {
     return json(405, { kind: 'unknown', message: 'Use POST.' });
   }
 
-  const credentials = readCredentials(Netlify.env.toObject());
+  // process.env rather than Netlify.env: it works in Netlify's Node runtime
+  // too, and keeps this adapter identical to the Vercel one.
+  const credentials = readCredentials(process.env);
   if (!credentials) {
     return json(503, {
       kind: 'unconfigured',

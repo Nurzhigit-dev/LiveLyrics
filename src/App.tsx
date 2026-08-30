@@ -127,16 +127,38 @@ export default function App() {
         setPhase('nomatch');
         return;
       }
+      /*
+       * Each failure gets its own heading. An auth failure used to fall through
+       * to the generic "couldn't reach the server" branch, which flatly
+       * contradicted the detail line underneath it ("the key was rejected") and
+       * sent anyone debugging it looking at their network connection instead of
+       * their credentials.
+       */
+      const HEADINGS: Record<string, { kind: string; title: string; hint?: string }> = {
+        quota: {
+          kind: 'limit reached',
+          title: 'Out of recognitions this month.',
+        },
+        unconfigured: {
+          kind: 'setup',
+          title: 'Recognition isn’t set up yet.',
+        },
+        auth: {
+          kind: 'credentials',
+          title: 'The server’s keys were rejected.',
+          hint: 'This is a setup problem on the site itself, not something you did. Whoever deployed it needs to check the ACRCloud credentials in the hosting environment variables.',
+        },
+      };
+
+      const heading = HEADINGS[err.kind] ?? {
+        kind: 'connection',
+        title: 'Couldn’t reach the server.',
+      };
+
       setNotice({
-        kind:
-          err.kind === 'quota' ? 'limit reached'
-          : err.kind === 'unconfigured' ? 'setup'
-          : 'connection',
-        title:
-          err.kind === 'quota' ? 'Out of recognitions this month.'
-          : err.kind === 'unconfigured' ? 'Recognition isn’t set up yet.'
-          : 'Couldn’t reach the server.',
-        detail: err.message,
+        kind: heading.kind,
+        title: heading.title,
+        detail: heading.hint ? `${err.message} ${heading.hint}` : err.message,
         tone: 'danger',
       });
       setPhase('error');
