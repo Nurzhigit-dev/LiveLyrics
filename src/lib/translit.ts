@@ -161,21 +161,26 @@ function bigrams(s: string): Map<string, number> {
 /**
  * How alike two names are, 0..1, regardless of script or punctuation.
  *
- * Dice similarity over letter pairs, plus one special case: when every word of
- * the shorter name appears in the longer one ("Kairat Nurtas" inside "Kairat
- * Nurtas, Ali Okapov") that is scored as a strong match on its own.
+ * `subset` allows one name wholly containing the other to count as a strong
+ * match. That is right for ARTISTS — "Kairat Nurtas" inside "Kairat Nurtas,
+ * Ali Okapov" is the same performer — but wrong for TITLES, where it made
+ * "Любовь" match "Первая любовь", a different song entirely. Titles are
+ * compared without it.
  */
-export function similarity(a: string, b: string): number {
+export function similarity(a: string, b: string, options: { subset?: boolean } = {}): number {
+  const { subset = true } = options;
   const x = loose(a);
   const y = loose(b);
   if (!x || !y) return 0;
   if (x === y) return 1;
 
-  const [short, long] = x.length <= y.length ? [x, y] : [y, x];
-  const shortWords = short.split(' ');
-  const longWords = new Set(long.split(' '));
-  if (shortWords.join('').length >= 4 && shortWords.every((w) => longWords.has(w))) {
-    return 0.85 + 0.15 * (short.length / long.length);
+  if (subset) {
+    const [short, long] = x.length <= y.length ? [x, y] : [y, x];
+    const shortWords = short.split(' ');
+    const longWords = new Set(long.split(' '));
+    if (shortWords.join('').length >= 4 && shortWords.every((w) => longWords.has(w))) {
+      return 0.85 + 0.15 * (short.length / long.length);
+    }
   }
 
   const A = bigrams(x);
@@ -188,6 +193,11 @@ export function similarity(a: string, b: string): number {
   }
   for (const n of B.values()) total += n;
   return total ? (2 * overlap) / total : 0;
+}
+
+/** Title comparison: never lets a longer title swallow a shorter one. */
+export function titleSimilarity(a: string, b: string): number {
+  return similarity(cleanTitle(a), cleanTitle(b), { subset: false });
 }
 
 /** Case-insensitive de-duplication that keeps the first spelling seen. */

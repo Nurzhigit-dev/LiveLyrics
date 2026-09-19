@@ -119,3 +119,71 @@
   .sync__readout { min-inline-size: 3.25rem; }
   .sync__action { padding-inline: var(--s-3); }
 }
+
+/* --- Pause and Find line --------------------------------------------------
+   Icon buttons sized as proper touch targets, in the same pill language as
+   the stepper so the bar reads as one set of controls. */
+
+.sync__icon {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  justify-content: center;
+  min-inline-size: 2.625rem;
+  min-block-size: 2.625rem;
+  padding-inline: var(--s-3);
+  border-radius: var(--r-pill);
+  color: var(--c-fg-mute);
+  background: rgb(255 255 255 / 0.07);
+  border: 1px solid var(--c-line);
+  transition:
+    color      var(--d-fast) var(--e-out),
+    background var(--d-fast) var(--e-out),
+    transform  var(--d-fast) var(--e-spring);
+}
+
+.sync__icon:hover  { color: var(--c-fg); background: rgb(255 255 255 / 0.12); }
+.sync__icon:active { transform: scale(0.94); }
+
+/* Paused is a state, not a moment, so the button stays lit while it lasts. */
+.sync__icon[data-active] {
+  color: var(--c-accent-ink);
+  background: var(--c-accent);
+  border-color: transparent;
+}
+.sync__icon[data-active]:hover { color: var(--c-accent-ink); background: var(--c-accent-hi); }
+
+.sync__icon-label {
+  font-family: var(--f-mono);
+  font-size: var(--t-label);
+  font-weight: 600;
+  letter-spacing: var(--tr-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* --- Picking a line -------------------------------------------------------- */
+
+.sync--picking { gap: var(--s-4); }
+
+.sync__hint {
+  font-size: 0.8125rem;
+  color: var(--c-fg-mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Responsive -----------------------------------------------------------
+   Narrow screens keep Pause and Find line — the two that matter with a thumb —
+   and drop the stepper, which the arrow keys cover on a keyboard anyway. */
+
+@media (max-width: 599px) {
+  .sync__group { display: none; }
+}
+
+@media (max-width: 420px) {
+  .sync__icon-label { display: none; }
+  .sync__icon--wide { min-inline-size: 2.625rem; padding-inline: 0; }
+  .sync__hint { font-size: 0.75rem; }
+}

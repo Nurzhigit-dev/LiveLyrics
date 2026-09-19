@@ -45,12 +45,15 @@ After that it keeps listening, quietly:
 
 - **It notices when the music stops.** The lyrics hold at the moment the silence began, and pick up from there when sound comes back.
 - **It double-checks itself.** Shortly after a match it takes a second measurement and corrects the timing. That also catches a first match that landed on the wrong repeat of a chorus.
+- **It won't show a guess.** The recogniser scores matches from 70 to 100. Anything below 85 is only shown if a second, later listen names the same song.
 - **It follows you to the next song.** When a track ends, or the room changes song while paused, it identifies the new one and swaps the lyrics over.
 
 ---
 
 ## Features
 
+- **Pause and resume**, by button or the space bar, holding the lyrics exactly where they were
+- **Find line**: scroll the lyrics freely, tap the line that's playing, and it carries on from there
 - **Word-by-word highlighting**, paced to each song's own tempo rather than smeared across instrumental breaks
 - **Russian and Kazakh songs** match even when the recogniser and the lyric database spell the names in different scripts: `Zemfira` finds `Земфира`
 - **Stop detection**, with an automatic re-sync on resume
@@ -70,7 +73,7 @@ Free, with no card at any point.
 
 The ACRCloud key belongs to **whoever deploys the site**, not to visitors. That's what makes it usable by anyone, but it also means the free tier's monthly recognition limit is a *shared pool across all your visitors combined*.
 
-A typical song uses about two recognitions: the match, plus one confirming check. A pause or a song change adds one. Silent recordings are never sent, so an empty room costs nothing. When the pool runs out, the app says so politely rather than breaking.
+A typical song uses about two recognitions: the match, plus one confirming check. A doubtful match, a song change, or resuming after a pause each add one. Silent recordings are never sent, so an empty room costs nothing. When the pool runs out, the app says so politely rather than breaking.
 
 ---
 
@@ -160,11 +163,17 @@ src/
 
 **One microphone session, with a 30-second rolling buffer.** A failed match retries by sliding the window six seconds forward rather than recording ten fresh ones, and background re-checks reuse audio that has already been heard.
 
+**A weak match is confirmed before it is shown.** The recogniser reports its confidence from 70 to 100, and offers a 70 as readily as a 100. Low-confidence matches are where wrong songs come from, so they are held back until a second listen agrees. If the two disagree, the app says it couldn't place the song rather than showing a guess.
+
+**The lyric search requires the performer to match, not just the title.** A search by title alone also returns every other song with that title, and short common ones — "Любовь", "Мама", "Ночь" — have dozens. An earlier version accepted any of them whose length happened to land within three seconds of ours, which among pop songs is close to a coin flip, and produced confident lyrics for entirely the wrong song.
+
 **Names are matched across scripts.** The recogniser and the lyric database often write the same song differently (a romanised name against the Cyrillic original), which made Russian and Kazakh songs look unrecognised when they had been identified fine. The lookup searches in both scripts and compares names in a script-neutral form. It also retries politely when LRCLIB throttles it, rather than reporting "no lyrics" for a song whose lyrics are right there.
 
 **The position is read from the matched slice.** The recogniser reports which part of the clip it matched and where that part sits in the track. The difference between the two is the position at the clip's first moment, which is what the clock is anchored to.
 
-**A pause holds the lyrics where the silence began**, not where it was noticed three seconds later. Holding at the noticing point put the lyrics three seconds ahead after every pause.
+**A pause holds the lyrics where the silence began**, not where it was noticed a few seconds later. Holding at the noticing point put the lyrics seconds ahead after every pause.
+
+**Silence is judged relative to the music, not in absolute terms.** An earlier version required near-digital silence before it would call a track stopped, which essentially never happens — a fan, a laptop, traffic outside all sit well above it — so a stopped track went unnoticed. The test is now how far the level has fallen below how loud the music has been. A quiet passage inside a song can trip it, which is tolerated deliberately: the lyrics hold for a moment, and the resume check re-measures against the room and corrects itself.
 
 **Lines arrive a quarter-second early; words light up on time.** The glide to a new line takes a moment, and a line that starts moving exactly on its timestamp visibly lands after the singer has begun. So lines lead slightly, while the word-by-word highlight stays on the beat.
 
@@ -183,7 +192,8 @@ Worth being honest about what this can and can't do:
 - It needs a reasonably clear signal. A loud room, a distant speaker, or people talking over the top will all defeat the fingerprint. **Proximity matters far more than volume.**
 - It only matches what's in ACRCloud's catalogue. Live takes, remixes and very local releases often aren't there, and that includes a lot of Kazakh music.
 - Lyrics depend on LRCLIB having an entry. When a song is recognised but has no lyrics, the app names the song and says so, rather than pretending it didn't hear it.
-- Ambient sync is never sample-accurate. That's why the self-check, the timing correction and click-to-re-anchor exist.
+- Ambient sync is never sample-accurate. That's why the self-check, the timing correction and **Find line** exist.
+- Whether a song is recognised at all is ACRCloud's catalogue, not something this code can fix. What it can do — and does — is refuse to show a match it isn't sure of.
 - The free tier is capped per month and shared by all visitors.
 
 ---

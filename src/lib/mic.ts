@@ -22,15 +22,23 @@ const RING_SECONDS = 30;
 /** Samples per message from the audio thread: about 43 ms at 48 kHz. */
 const BATCH = 2048;
 
-/** Below this RMS the room is silent, whatever the music's own level. */
-const QUIET_FLOOR = 0.004;
-/** Or this far below how loud the music has been (about -22 dB). */
-const QUIET_RATIO = 0.08;
-/** How long it must stay quiet before the music is presumed stopped. */
-const QUIET_HOLD_MS = 3200;
-/** Coming back from quiet needs clearly more than the threshold, so a single
- *  loud beat in a quiet room doesn't flicker the state back and forth. */
-const RESUME_MARGIN = 1.6;
+/**
+ * What counts as "the music stopped".
+ *
+ * The test is mostly RELATIVE: how far the level has dropped below how loud
+ * the music has been. An earlier version required near-digital silence, which
+ * essentially never happens — a fan, a laptop, traffic outside all sit well
+ * above it — so a stopped track was never noticed.
+ *
+ * A quiet passage inside a song can trip this too. That is deliberately
+ * tolerated: the lyrics hold for a moment, and when the sound returns the
+ * resume check re-measures against the room and corrects itself.
+ */
+const QUIET_RATIO = 0.25;          // about 12 dB below the music's own level
+const QUIET_FLOOR = 0.0035;        // and an absolute floor for a silent room
+const QUIET_HOLD_MS = 2500;
+/** Coming back needs clearly more than the threshold, so the state can't flutter. */
+const RESUME_MARGIN = 1.8;
 
 /**
  * Runs on the audio thread. Batches the 128-sample render quanta into larger

@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { LyricLine } from '../types';
+import { formatTime } from '../lib/time';
 import './LyricStage.css';
 
 interface Props {
@@ -10,6 +11,8 @@ interface Props {
   activeIndex: number;
   /** False when only unsynced plain lyrics were available. */
   synced: boolean;
+  /** True while the listener is scrolling freely to choose a line. */
+  picking?: boolean;
   /** Reads the exact song position without triggering a render. */
   getPosition: () => number;
   /** Called when a line is clicked, to re-anchor the clock to that moment. */
@@ -44,12 +47,14 @@ interface RowProps {
   isActive: boolean;
   isPast: boolean;
   seekable: boolean;
+  /** Show the line's timestamp — used while choosing a line. */
+  showTime?: boolean;
   onSeek?: (index: number) => void;
   attach: (index: number, el: HTMLElement | null) => void;
 }
 
 const LyricRow = memo(function LyricRow({
-  line, index, distance, isActive, isPast, seekable, onSeek, attach,
+  line, index, distance, isActive, isPast, seekable, showTime, onSeek, attach,
 }: RowProps) {
   const ref = useCallback(
     (el: HTMLElement | null) => attach(index, el),
@@ -72,22 +77,32 @@ const LyricRow = memo(function LyricRow({
     'data-active': isActive || undefined,
     'data-past': isPast || undefined,
     'data-words': words.length,
+    'data-timed': showTime || undefined,
     'aria-current': isActive ? ('true' as const) : undefined,
   };
 
-  // Only the active line is split into words. Every other line stays a single
-  // text node, which keeps the DOM small on a long song.
-  const content = isActive && seekable
-    ? words.map((word, w) => (
-        <span
-          key={`${w}-${word}`}
-          className="lyrics__word"
-          style={{ '--i': w } as React.CSSProperties}
-        >
-          {word}{w < words.length - 1 ? ' ' : ''}
-        </span>
-      ))
-    : line.text;
+  // While choosing a line, every line is laid out the same way — timestamp
+  // beside text — so the list reads as something to scan rather than follow.
+  // Only the active line is split into words, and only when following, which
+  // keeps the DOM small on a long song.
+  const content = showTime ? (
+    <>
+      <span className="lyrics__time readout">{formatTime(line.time)}</span>
+      <span className="lyrics__text">{line.text}</span>
+    </>
+  ) : isActive && seekable ? (
+    words.map((word, w) => (
+      <span
+        key={`${w}-${word}`}
+        className="lyrics__word"
+        style={{ '--i': w } as React.CSSProperties}
+      >
+        {word}{w < words.length - 1 ? ' ' : ''}
+      </span>
+    ))
+  ) : (
+    line.text
+  );
 
   return seekable && onSeek ? (
     <button
@@ -106,7 +121,7 @@ const LyricRow = memo(function LyricRow({
 
 /* ------------------------------------------------------------------------ */
 
-function LyricStageInner({ lines, spans, activeIndex, synced, getPosition, onSeekToLine }: Props) {
+function LyricStageInner({ lines, spans, activeIndex, synced, picking = false, getPosition, onSeekToLine }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<Array<HTMLElement | null>>([]);
   const litFrame = useRef(0);
@@ -137,14 +152,16 @@ function LyricStageInner({ lines, spans, activeIndex, synced, getPosition, onSee
    * error would compound with every interruption.
    */
   const align = useCallback(() => {
-    if (!synced) return;
+    // While picking, the reel is an ordinary scrollable list and the listener
+    // drives it. Moving it under them would be exactly wrong.
+    if (!synced || picking) return;
     const viewport = viewportRef.current;
     const el = lineRefs.current[Math.max(0, activeIndex)];
     if (!viewport || !el) return;
 
     const focal = viewport.clientHeight * FOCAL_RATIO;
     setShift(focal - (el.offsetTop + el.offsetHeight / 2));
-  }, [activeIndex, synced]);
+  }, [activeIndex, synced, picking]);
 
   // useLayoutEffect so the reel is never painted at the old position first.
   useLayoutEffect(align, [align]);
@@ -166,6 +183,29 @@ function LyricStageInner({ lines, spans, activeIndex, synced, getPosition, onSee
   }, [align, synced]);
 
   /**
+   * Entering and leaving the free-scrolling view.
+   *
+   * On entry the list is scrolled so the line the clock believes is playing
+   * sits in the middle, which is the obvious place to start looking from. On
+   * exit the scroll is returned to zero, because the following view positions
+   * itself with a transform and any leftover scroll would offset it.
+   */
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    if (!picking) {
+      viewport.scrollTop = 0;
+      return;
+    }
+    const el = lineRefs.current[Math.max(0, activeIndex)];
+    viewport.scrollTop = el
+      ? el.offsetTop + el.offsetHeight / 2 - viewport.clientHeight / 2
+      : 0;
+    // Only on entry: re-centring on every tick would fight the listener.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picking]);
+
+  /**
    * Lights the active line up word by word as it is sung.
    *
    * LRC carries per-line timings only, so word positions are interpolated
@@ -179,7 +219,7 @@ function LyricStageInner({ lines, spans, activeIndex, synced, getPosition, onSee
    */
   useEffect(() => {
     const el = lineRefs.current[activeIndex];
-    if (!synced || !el || activeIndex < 0) return;
+    if (!synced || picking || !el || activeIndex < 0) return;
 
     const start = lines[activeIndex]?.time ?? 0;
     // The SUNG length of the line, not the gap to the next one: across an
@@ -201,7 +241,7 @@ function LyricStageInner({ lines, spans, activeIndex, synced, getPosition, onSee
       cancelAnimationFrame(litFrame.current);
       el.style.removeProperty('--lit');
     };
-  }, [activeIndex, lines, spans, synced, getPosition]);
+  }, [activeIndex, lines, spans, synced, picking, getPosition]);
 
   if (lines.length === 0) return null;
 
@@ -210,7 +250,7 @@ function LyricStageInner({ lines, spans, activeIndex, synced, getPosition, onSee
       className="lyrics screen-in"
       ref={viewportRef}
       id="main"
-      data-mode={synced ? 'synced' : 'static'}
+      data-mode={!synced ? 'static' : picking ? 'pick' : 'synced'}
       tabIndex={0}
       role="region"
       aria-label="Lyrics"
@@ -221,7 +261,7 @@ function LyricStageInner({ lines, spans, activeIndex, synced, getPosition, onSee
 
       <div
         className="lyrics__reel"
-        style={synced ? { transform: `translate3d(0, ${shift}px, 0)` } : undefined}
+        style={synced && !picking ? { transform: `translate3d(0, ${shift}px, 0)` } : undefined}
       >
         {lines.map((line, i) => (
           <LyricRow
@@ -232,6 +272,7 @@ function LyricStageInner({ lines, spans, activeIndex, synced, getPosition, onSee
             isActive={i === activeIndex}
             isPast={i < activeIndex}
             seekable={synced && Boolean(onSeekToLine)}
+            showTime={picking}
             onSeek={onSeekToLine}
             attach={attach}
           />

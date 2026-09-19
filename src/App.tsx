@@ -15,7 +15,7 @@ import { SAMPLE_SECONDS, useLiveLyrics } from './hooks/useLiveLyrics';
  */
 export default function App() {
   const lyrics = useLiveLyrics();
-  const { phase, busy, showLyrics, synced, notice, nudge } = lyrics;
+  const { phase, busy, showLyrics, synced, picking, notice, nudge } = lyrics;
 
   const toggleListen = () => (busy ? lyrics.stop() : void lyrics.listen());
 
@@ -35,7 +35,23 @@ export default function App() {
       const el = document.activeElement;
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
 
-      if (event.key === 'ArrowLeft') {
+      // Escape closes the line picker, the way it closes anything else.
+      if (event.key === 'Escape' && picking) {
+        event.preventDefault();
+        lyrics.stopPicking();
+        return;
+      }
+
+      // While picking, arrows and space belong to scrolling the list.
+      if (picking) return;
+
+      if (event.key === ' ' || event.key === 'Spacebar') {
+        // Not while a button has focus: space is how a button is pressed, and
+        // stealing it would break the control just used.
+        if (el instanceof HTMLButtonElement || el instanceof HTMLAnchorElement) return;
+        event.preventDefault();
+        lyrics.togglePause();
+      } else if (event.key === 'ArrowLeft') {
         event.preventDefault();
         nudge(-NUDGE_STEP);
       } else if (event.key === 'ArrowRight') {
@@ -46,22 +62,28 @@ export default function App() {
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [showLyrics, synced, nudge]);
+  }, [showLyrics, synced, picking, nudge, lyrics]);
 
   // Readouts only ever show what is actually true right now.
   const readouts = useMemo(() => {
     const out: string[] = [];
     if (phase === 'listening') out.push(`${SAMPLE_SECONDS}s sample`);
     if (lyrics.activity) out.push(lyrics.activity);
+    if (picking) out.push('choosing a line');
     if (showLyrics && !synced) out.push('unsynced');
     return out;
-  }, [phase, lyrics.activity, showLyrics, synced]);
+  }, [phase, lyrics.activity, picking, showLyrics, synced]);
 
   return (
     <>
       <a className="skip-link" href="#main">Skip to content</a>
 
-      <StatusBar phase={phase} readouts={readouts} level={lyrics.level} />
+      <StatusBar
+        phase={phase}
+        readouts={readouts}
+        level={lyrics.level}
+        label={lyrics.pausedBy === 'user' ? 'paused' : undefined}
+      />
 
       {showLyrics ? (
         <LyricStage
@@ -69,6 +91,7 @@ export default function App() {
           spans={lyrics.spans}
           activeIndex={lyrics.activeIndex}
           synced={synced}
+          picking={picking}
           getPosition={lyrics.getPosition}
           onSeekToLine={synced ? lyrics.seekToLine : undefined}
         />
@@ -99,10 +122,15 @@ export default function App() {
             <SyncControls
               nudge={lyrics.calibration}
               synced={synced}
+              paused={lyrics.paused}
+              picking={picking}
+              busy={busy}
               onNudge={nudge}
+              onTogglePause={lyrics.togglePause}
+              onPick={lyrics.startPicking}
+              onCancelPick={lyrics.stopPicking}
               onReset={lyrics.reset}
               onRelisten={() => void lyrics.listen()}
-              busy={busy}
             />
           ) : null
         }

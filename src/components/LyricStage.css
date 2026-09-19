@@ -202,6 +202,75 @@
 
 .lyrics[data-mode='static'] .lyrics__line::before { display: none; }
 
+/* --- Picking a line -------------------------------------------------------
+   A plain, scrollable list. Every line reads the same so the eye can scan for
+   the one being sung, with its timestamp beside it. Nothing moves on its own:
+   the listener is driving now. */
+
+.lyrics[data-mode='pick'] {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Deliberately NOT scroll-behavior: smooth. Opening the picker jumps
+     straight to the line that is playing; animating there from the top of the
+     song would be a long, disorienting slide on a lengthy track. Wheel and
+     touch scrolling are the browser's own and stay smooth either way. */
+}
+
+.lyrics[data-mode='pick'] .lyrics__reel {
+  transform: none;
+  transition: none;
+  will-change: auto;
+  /* Enough room that the first and last lines can still sit mid-screen. */
+  padding-block: 32vh 40vh;
+  gap: 0;
+}
+
+.lyrics[data-mode='pick'] .lyrics__line {
+  display: grid;
+  grid-template-columns: 3.25rem 1fr;
+  gap: var(--s-3);
+  align-items: baseline;
+
+  opacity: 0.72;
+  transform: none;
+  filter: none;
+  font-size: clamp(1.0625rem, 2.4vw, 1.5rem);
+  font-variation-settings: 'wght' 550, 'wdth' 100;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  max-inline-size: 42ch;
+  padding: var(--s-2) var(--s-3);
+  margin-inline-start: calc(var(--s-3) * -1);
+  border-radius: var(--r-md);
+  text-shadow: none;
+  transition: opacity var(--d-fast) var(--e-out), background var(--d-fast) var(--e-out);
+}
+
+.lyrics[data-mode='pick'] .lyrics__line:hover,
+.lyrics[data-mode='pick'] .lyrics__line:focus-visible {
+  opacity: 1;
+  background: rgb(255 255 255 / 0.08);
+}
+
+/* Where the clock currently thinks the song is — the starting point for
+   the eye, not a claim that it's correct. */
+.lyrics[data-mode='pick'] .lyrics__line[data-active] {
+  opacity: 1;
+  color: var(--c-accent);
+}
+
+.lyrics[data-mode='pick'] .lyrics__line::before { display: none; }
+
+.lyrics__time {
+  font-size: 0.75rem;
+  color: var(--c-fg-soft);
+  text-align: end;
+}
+
+.lyrics[data-mode='pick'] .lyrics__line[data-active] .lyrics__time { color: var(--c-accent); }
+
+.lyrics[data-mode='pick'] .lyrics__rest { padding-block: var(--s-3); opacity: 0.5; }
+
 /* --- Edge fades ----------------------------------------------------------- */
 
 .lyrics__fade {

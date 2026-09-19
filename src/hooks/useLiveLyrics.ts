@@ -6,7 +6,7 @@ import { identify, IdentifyError } from '../lib/identify';
 import { findLyrics, LyricsError, type LrclibRecord, type LyricTarget } from '../lib/lrclib';
 import { computeSungSpans, findActiveIndex, parseLrc } from '../lib/lrc';
 import { clamp, loadCalibration, saveCalibration } from '../lib/calibration';
-import { cleanTitle, primaryArtist, similarity, uniqueNames } from '../lib/translit';
+import { primaryArtist, similarity, titleSimilarity, uniqueNames } from '../lib/translit';
 import type { AppPhase, Identification, LyricLine, Track } from '../types';
 
 /**
@@ -46,6 +46,19 @@ const NEXT_SONG_ATTEMPTS = 3;
 /** Below this a recording is effectively silence — not worth a recognition. */
 const MIN_AUDIBLE_RMS = 0.0025;
 
+/**
+ * Confidence at which a match is trusted on its own.
+ *
+ * The recogniser scores matches from 70 to 100, and hands back a 70 as
+ * readily as a 100. Weak matches are where wrong songs come from, so anything
+ * below this has to be agreed with by a second, later listen before it is
+ * shown. That costs one extra recognition, and only for the doubtful ones.
+ */
+const STRONG_SCORE = 85;
+
+/** Extra audio to gather before asking for that second opinion. */
+const SECOND_OPINION_SECONDS = 8;
+
 /** After this long paused, let go of the microphone. */
 const RELEASE_MIC_AFTER_MS = 10 * 60 * 1000;
 
@@ -73,7 +86,7 @@ function sameSong(a: Track | null, b: Track | null): boolean {
   if (!a || !b) return false;
   if (a.id && b.id && a.id === b.id) return true;
   return (
-    similarity(cleanTitle(a.title), cleanTitle(b.title)) >= 0.8 &&
+    titleSimilarity(a.title, b.title) >= 0.8 &&
     similarity(primaryArtist(a.artist), primaryArtist(b.artist)) >= 0.6
   );
 }
@@ -86,9 +99,10 @@ function sameSong(a: Track | null, b: Track | null): boolean {
  */
 function lyricTarget(id: Identification): LyricTarget {
   const top = id.candidates[0] ?? id.track;
-  const same = id.candidates.filter(
-    (c) => c === top || similarity(cleanTitle(c.title), cleanTitle(top.title)) >= 0.7,
-  );
+  // Same RECORDING, not merely a similar title: pooling the names of a
+  // different song would hand the lyric search a spelling to match against
+  // that belongs to something else entirely.
+  const same = id.candidates.filter((c) => c === top || sameSong(c, top));
   return {
     titles: uniqueNames(same.flatMap((c) => [c.title, ...(c.titleVariants ?? [])])),
     artists: uniqueNames(same.flatMap((c) => [...(c.artistVariants ?? []), c.artist])),
@@ -118,6 +132,10 @@ export function useLiveLyrics() {
   const [level, setLevel] = useState(0);
   const [caption, setCaption] = useState<string | null>(null);
   const [activity, setActivity] = useState<string | null>(null);
+  /** Who stopped the clock: the listener, or the room going quiet. */
+  const [pausedBy, setPausedBy] = useState<'user' | 'silence' | null>(null);
+  /** True while the listener is scrolling the lyrics to choose a line. */
+  const [picking, setPicking] = useState(false);
 
   const live = useRef({
     phase: 'idle' as AppPhase,
@@ -126,6 +144,8 @@ export function useLiveLyrics() {
     synced: true,
     anchor: null as Anchor | null,
     hold: null as number | null,
+    pausedBy: null as 'user' | 'silence' | null,
+    picking: false,
     calibration,
   });
 
@@ -158,6 +178,8 @@ export function useLiveLyrics() {
       synced: (v: boolean) => { live.current.synced = v; setSynced(v); },
       anchor: (v: Anchor | null) => { live.current.anchor = v; setAnchor(v); },
       hold: (v: number | null) => { live.current.hold = v; setHold(v); },
+      pausedBy: (v: 'user' | 'silence' | null) => { live.current.pausedBy = v; setPausedBy(v); },
+      picking: (v: boolean) => { live.current.picking = v; setPicking(v); },
     };
 
     /** The song position at wall-clock time `ts`, without the calibration. */
@@ -258,14 +280,17 @@ export function useLiveLyrics() {
 
     /* ---- pause and resume ---------------------------------------------- */
 
-    const handleQuiet = (since: number) => {
+    /**
+     * Stops the clock at `at` — the moment the music actually stopped, not the
+     * moment we worked it out. Holding at the noticing point put the lyrics
+     * seconds ahead every time the music was paused and resumed.
+     */
+    const pause = (by: 'user' | 'silence', at: number) => {
       const s = live.current;
       if (s.phase !== 'synced' || !s.synced || !s.anchor) return;
       bgRef.current?.abort();
-      // Held at the moment the silence BEGAN. Holding at the moment it was
-      // noticed — three seconds later — put the lyrics three seconds ahead
-      // every time the music was paused and resumed.
-      set.hold(rawAt(since) + s.calibration);
+      set.hold(rawAt(at) + s.calibration);
+      set.pausedBy(by);
       set.phase('paused');
       clearReleaseTimer();
       releaseTimer.current = setTimeout(() => {
@@ -273,18 +298,48 @@ export function useLiveLyrics() {
       }, RELEASE_MIC_AFTER_MS);
     };
 
-    const handleSound = (at: number) => {
+    const resume = (at: number) => {
       const s = live.current;
       if (s.phase !== 'paused' || s.hold === null) return;
+      const wasAutomatic = s.pausedBy === 'silence';
       clearReleaseTimer();
-      // Continue from exactly where it was held — right for a real pause —
-      // then check against the room, which fixes the other cases: a quiet
-      // passage mistaken for a pause, a scrub, or a different song.
+      // Continue from exactly where it was held, which is right for a real pause.
       set.anchor({ startedAt: at, songPosition: s.hold - s.calibration });
       set.hold(null);
+      set.pausedBy(null);
       set.phase('synced');
-      const mic = micRef.current;
-      if (mic) void resync('resume', mic.secondsCaptured);
+      // Only a pause we guessed at needs checking against the room: it might
+      // have been a quiet passage, a scrub, or a different song. A pause the
+      // listener asked for is theirs to resume, and costs no recognition.
+      if (wasAutomatic) {
+        const mic = micRef.current;
+        if (mic) void resync('resume', mic.secondsCaptured);
+      }
+    };
+
+    /** The Pause / Play button, and the space bar. */
+    const togglePause = () => {
+      const s = live.current;
+      const paused = s.phase === 'paused';
+      if (!paused && !(s.phase === 'synced' && s.synced)) return;
+      // Reading the clock is impure, which the lint rule flags because this
+      // function is created inside useMemo. It only ever runs from a press.
+      // oxlint-disable-next-line react/purity
+      const at = performance.now();
+      if (paused) resume(at);
+      else pause('user', at);
+    };
+
+    // A pause the listener asked for outranks the room: sound coming back
+    // must not undo it.
+    const handleQuiet = (since: number) => {
+      if (live.current.pausedBy === 'user') return;
+      pause('silence', since);
+    };
+
+    const handleSound = (at: number) => {
+      if (live.current.pausedBy !== 'silence') return;
+      resume(at);
     };
 
     const ensureMic = async () => {
@@ -311,7 +366,7 @@ export function useLiveLyrics() {
     const recognise = async (
       mic: MicSession,
       signal: AbortSignal,
-      onStage?: (stage: 'listening' | 'identifying', attempt: number) => void,
+      onStage?: (stage: 'listening' | 'identifying' | 'confirming', attempt: number) => void,
     ) => {
       let until = mic.secondsCaptured + SAMPLE_SECONDS;
       let heardAnything = false;
@@ -325,12 +380,32 @@ export function useLiveLyrics() {
           heardAnything = true;
           onStage?.('identifying', attempt);
           try {
-            return { id: await identify(snap.wav, signal), snap };
+            const id = await identify(snap.wav, signal);
+            if ((id.track.score ?? 100) >= STRONG_SCORE) return { id, snap };
+
+            // Not confident enough to show. Listen a little longer and ask
+            // again; only a second listen naming the same song is trusted.
+            onStage?.('confirming', attempt);
+            await mic.waitUntil(mic.secondsCaptured + SECOND_OPINION_SECONDS, signal);
+            const later = await mic.snapshot(SAMPLE_SECONDS);
+            let second: Identification | null = null;
+            try {
+              second = await identify(later.wav, signal);
+            } catch (err) {
+              if (isAbort(err)) throw err;
+            }
+            if (second && sameSong(second.track, id.track)) {
+              // Keep whichever reading the recogniser was surer of.
+              return (second.track.score ?? 0) >= (id.track.score ?? 0)
+                ? { id: second, snap: later }
+                : { id, snap };
+            }
+            // The two disagreed. Better to say nothing than to show a guess.
           } catch (err) {
             if (!(err instanceof IdentifyError && err.kind === 'nomatch')) throw err;
           }
         }
-        until += RETRY_SLIDE_SECONDS;
+        until = Math.max(until + RETRY_SLIDE_SECONDS, mic.secondsCaptured + 1);
       }
 
       if (!heardAnything) throw new TooQuietError();
@@ -522,9 +597,13 @@ export function useLiveLyrics() {
       try {
         const mic = await ensureMic();
         const { id, snap } = await recognise(mic, signal, (stage, attempt) => {
-          set.phase(stage);
-          if (stage === 'identifying') setLevel(0);
-          setCaption(stage === 'listening' && attempt > 1 ? 'Not sure yet — listening a few seconds longer…' : null);
+          set.phase(stage === 'listening' ? 'listening' : 'identifying');
+          if (stage !== 'listening') setLevel(0);
+          setCaption(
+            stage === 'confirming' ? 'Not certain — listening again to be sure…'
+            : stage === 'listening' && attempt > 1 ? 'Not sure yet — listening a few seconds longer…'
+            : null,
+          );
         });
 
         found = id.track;
@@ -568,12 +647,24 @@ export function useLiveLyrics() {
       saveCalibration(next);
     };
 
-    /** Clicking a lyric line says "the song is here, right now". */
+    /** Opens the free-scrolling view for choosing the line that is playing. */
+    const startPicking = () => {
+      if (live.current.phase !== 'synced' && live.current.phase !== 'paused') return;
+      bgRef.current?.abort();
+      set.picking(true);
+    };
+
+    const stopPicking = () => set.picking(false);
+
+    /** Choosing a lyric line says "the song is here, right now". */
     const seekToLine = (index: number) => {
       const line = live.current.lines[index];
       if (!line) return;
+      set.picking(false);
       // A hand correction outranks an automatic one still in flight.
       bgRef.current?.abort();
+      // Paused: move the held position and stay paused, so the lyrics are
+      // ready at the right line when the music starts again.
       if (live.current.phase === 'paused') {
         set.hold(line.time);
         return;
@@ -591,7 +682,11 @@ export function useLiveLyrics() {
       micRef.current = null;
     };
 
-    return { listen, stop, reset, nudge, seekToLine, listenForNext, dispose };
+    return {
+      listen, stop, reset, nudge, seekToLine,
+      togglePause, startPicking, stopPicking,
+      listenForNext, dispose,
+    };
   }, []);
 
   // Release the microphone and cancel everything on unmount.
@@ -622,11 +717,17 @@ export function useLiveLyrics() {
     caption,
     activity,
     busy,
+    paused: phase === 'paused',
+    pausedBy,
+    picking,
     showLyrics: (phase === 'synced' || phase === 'paused') && lines.length > 0,
     listen: engine.listen,
     stop: engine.stop,
     reset: engine.reset,
     nudge: engine.nudge,
     seekToLine: engine.seekToLine,
+    togglePause: engine.togglePause,
+    startPicking: engine.startPicking,
+    stopPicking: engine.stopPicking,
   };
 }

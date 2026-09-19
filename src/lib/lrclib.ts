@@ -4,6 +4,7 @@ import {
   primaryArtist,
   similarity,
   swapScript,
+  titleSimilarity,
   uniqueNames,
 } from './translit';
 
@@ -138,30 +139,39 @@ function artistForms(artists: string[]): string[] {
   return uniqueNames([...base, ...base.map((a) => swapScript(primaryArtist(a)))]);
 }
 
+/** A title has to be this close before a record is considered at all. */
+const MIN_TITLE = 0.78;
+/** And the performer has to match too, in whatever script. */
+const MIN_ARTIST = 0.6;
+/** Beyond this many seconds apart, it is a different recording. */
+const MAX_DURATION_DRIFT = 10;
+
 /**
  * How well one LRCLIB record fits what we heard, or -1 to reject it outright.
  *
- * Duration carries real weight because it's what separates a 3-minute radio
- * edit from a 7-minute album version of the same title — and the timings in
- * the wrong one would be off for the whole song.
+ * The thresholds are deliberately strict. A search by title alone also returns
+ * every other song with that title, and short common titles — "Любовь",
+ * "Мама", "Ночь" — have dozens. An earlier version let one through whenever
+ * its length happened to land within three seconds of ours, which is close to
+ * a coin flip among pop songs, and produced confident lyrics for entirely the
+ * wrong song. Now the performer has to match as well, in any script.
+ *
+ * Duration still carries weight, because it is what separates a radio edit
+ * from an album version of the same song — and the wrong one's timings would
+ * be off for the whole track.
  */
 function score(r: LrclibRecord, titles: string[], artists: string[], duration?: number): number {
-  const recordTitle = cleanTitle(r.trackName ?? '');
-  const t = Math.max(0, ...titles.map((x) => similarity(recordTitle, cleanTitle(x))));
+  const t = Math.max(0, ...titles.map((x) => titleSimilarity(r.trackName ?? '', x)));
   const a = Math.max(0, ...artists.map((x) => Math.max(
     similarity(r.artistName ?? '', x),
     similarity(primaryArtist(r.artistName ?? ''), x),
   )));
   const delta = duration && r.duration ? Math.abs(r.duration - duration) : null;
 
-  if (t < 0.55) return -1;
-  if (delta !== null && delta > 25) return -1;             // a different recording entirely
-  // A title-only search also finds covers by other artists. Only let an artist
-  // mismatch through when the length pins it to the same recording anyway —
-  // which is what happens when the two databases romanise a name differently.
-  if (a < 0.4 && !(delta !== null && delta <= 3 && t >= 0.85)) return -1;
+  if (t < MIN_TITLE || a < MIN_ARTIST) return -1;
+  if (delta !== null && delta > MAX_DURATION_DRIFT) return -1;
 
-  const d = delta === null ? 0.5 : delta <= 2 ? 1 : delta <= 5 ? 0.6 : delta <= 12 ? 0.25 : 0;
+  const d = delta === null ? 0.5 : delta <= 2 ? 1 : delta <= 5 ? 0.6 : 0.25;
   return 0.4 * t + 0.35 * a + 0.25 * d
     + (r.syncedLyrics ? 0.2 : 0)
     + (r.plainLyrics ? 0.02 : 0)

@@ -21,9 +21,12 @@ interface Props {
   readouts?: string[];
   /** Live input loudness, 0..1. Only meaningful while recording. */
   level?: number;
+  /** Overrides the phase's own wording — e.g. a pause the listener asked for,
+   *  rather than one we guessed at from the room going quiet. */
+  label?: string;
 }
 
-export function StatusBar({ phase, readouts = [], level = 0 }: Props) {
+export function StatusBar({ phase, readouts = [], level = 0, label }: Props) {
   const recording = phase === 'listening';
 
   return (
@@ -41,7 +44,7 @@ export function StatusBar({ phase, readouts = [], level = 0 }: Props) {
             signalled by colour alone. */}
         <span className={`statusbar__dot statusbar__dot--${phase}`} aria-hidden="true" />
         <span className="label statusbar__phase" role="status" aria-live="polite">
-          {PHASE_LABEL[phase]}
+          {label ?? PHASE_LABEL[phase]}
         </span>
       </div>
 
