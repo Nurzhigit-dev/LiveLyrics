@@ -32,11 +32,14 @@
    * the main thread, so it stays smooth even while React is working — which a
    * per-frame JavaScript scroll animation cannot do.
    *
-   * The curve leaves briskly and lands with a long, soft tail; a symmetrical
-   * ease reads as mechanical at this distance and duration.
+   * 650ms, down from 900: with a long glide the new line was still sliding
+   * into place well after the singer had started it, which read as the
+   * lyrics running late. Together with the small lead on line changes, the
+   * line is now settled by the time its first word is sung. The curve leaves
+   * briskly and lands softly, rather than easing symmetrically.
    */
   transform: translate3d(0, 0, 0);
-  transition: transform 900ms cubic-bezier(0.22, 0.7, 0.14, 1);
+  transition: transform 650ms cubic-bezier(0.2, 0.85, 0.25, 1);
   will-change: transform;
 }
 

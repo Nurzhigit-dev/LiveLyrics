@@ -4,6 +4,8 @@ import './LyricStage.css';
 
 interface Props {
   lines: LyricLine[];
+  /** How long each line is actually sung for — see computeSungSpans. */
+  spans?: number[];
   /** Index of the line currently being sung, or -1 before the first. */
   activeIndex: number;
   /** False when only unsynced plain lyrics were available. */
@@ -104,7 +106,7 @@ const LyricRow = memo(function LyricRow({
 
 /* ------------------------------------------------------------------------ */
 
-function LyricStageInner({ lines, activeIndex, synced, getPosition, onSeekToLine }: Props) {
+function LyricStageInner({ lines, spans, activeIndex, synced, getPosition, onSeekToLine }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<Array<HTMLElement | null>>([]);
   const litFrame = useRef(0);
@@ -180,8 +182,10 @@ function LyricStageInner({ lines, activeIndex, synced, getPosition, onSeekToLine
     if (!synced || !el || activeIndex < 0) return;
 
     const start = lines[activeIndex]?.time ?? 0;
-    const end = lines[activeIndex + 1]?.time ?? start + LAST_LINE_SECONDS;
-    const span = Math.max(0.35, end - start);
+    // The SUNG length of the line, not the gap to the next one: across an
+    // instrumental break the gap would drag the highlight far behind the voice.
+    const gap = (lines[activeIndex + 1]?.time ?? start + LAST_LINE_SECONDS) - start;
+    const span = Math.max(0.35, spans?.[activeIndex] ?? gap);
     const words = Number(el.dataset.words ?? 1);
 
     const tick = () => {
@@ -197,7 +201,7 @@ function LyricStageInner({ lines, activeIndex, synced, getPosition, onSeekToLine
       cancelAnimationFrame(litFrame.current);
       el.style.removeProperty('--lit');
     };
-  }, [activeIndex, lines, synced, getPosition]);
+  }, [activeIndex, lines, spans, synced, getPosition]);
 
   if (lines.length === 0) return null;
 

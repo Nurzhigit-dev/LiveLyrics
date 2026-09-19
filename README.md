@@ -36,26 +36,27 @@ already are**. That single number is what turns "here are the lyrics" into
 
 | Step | What happens |
 | --- | --- |
-| **Hears** | Ten seconds of mono audio at 8 kHz, straight from the microphone, encoded to WAV in the browser. Nothing is stored or kept. |
-| **Knows** | The sample goes to this app's own `/api/identify`, which asks [ACRCloud](https://www.acrcloud.com) what it is — and, crucially, whereabouts in the track the sample came from. |
-| **Follows** | Time-coded lyrics come from [LRCLIB](https://lrclib.net). That offset becomes the anchor the on-screen clock runs from, and the words follow the music. |
+| **Hears** | Ten seconds from the microphone, captured at the device's own rate and converted to 8 kHz mono in the browser. Nothing is stored or kept. |
+| **Knows** | The clip goes to this app's own `/api/identify`, which asks [ACRCloud](https://www.acrcloud.com) what it is and whereabouts in the track the clip came from. |
+| **Finds the words** | Time-coded lyrics come from [LRCLIB](https://lrclib.net). The lookup searches under every spelling it knows, in Latin and Cyrillic, and picks the entry that matches by title, artist *and* song length. |
+| **Follows** | That position becomes the anchor for the on-screen clock, and the words follow the music. |
 
-It also **notices when the music stops.** A lightweight level monitor watches
-the room; if it goes quiet, the lyrics hold exactly where they are instead of
-running on without you. When sound comes back, they pick up from that same
-point.
+After that it keeps listening, quietly:
+
+- **It notices when the music stops.** The lyrics hold at the moment the silence began, and pick up from there when sound comes back.
+- **It double-checks itself.** Shortly after a match it takes a second measurement and corrects the timing. That also catches a first match that landed on the wrong repeat of a chorus.
+- **It follows you to the next song.** When a track ends, or the room changes song while paused, it identifies the new one and swaps the lyrics over.
 
 ---
 
 ## Features
 
-- **Word-by-word highlighting** — the active line lights up as it's sung, so
-  you can see the song moving, not just which line is current
-- **Stop detection** — goes quiet, lyrics pause; sound returns, they resume
-- **Timing correction that sticks** — nudge it once with the arrow keys or the
-  `‹ ›` stepper and it's remembered for every song after that
+- **Word-by-word highlighting**, paced to each song's own tempo rather than smeared across instrumental breaks
+- **Russian and Kazakh songs** match even when the recogniser and the lyric database spell the names in different scripts: `Zemfira` finds `Земфира`
+- **Stop detection**, with an automatic re-sync on resume
+- **Timing correction that sticks**: nudge it once with the arrow keys or the `‹ ›` stepper and it's remembered for every song after that
 - **Click any line** to re-anchor the sync to that exact moment
-- **Nothing to sign up for** — visitors need no account and no keys
+- **Nothing to sign up for**: visitors need no account and no keys
 - **Fully keyboard accessible**, with reduced-motion support throughout
 
 ---
@@ -64,16 +65,12 @@ point.
 
 Free, with no card at any point.
 
-- **LRCLIB** — genuinely free. No key, no account, no quota.
-- **ACRCloud** — free tier, no credit card required.
+- **LRCLIB**: genuinely free. No key, no account, no quota.
+- **ACRCloud**: free tier, no credit card required.
 
-One thing worth understanding if you deploy your own copy: the ACRCloud key
-belongs to **whoever deploys the site**, not to visitors. That's what makes it
-usable by anyone — but it also means the free tier's monthly recognition limit
-is a *shared pool across all your visitors combined*, not per person. Fine for
-personal use and for showing people. If it ever gets real traffic, that ceiling
-is the thing you'll hit first, and the app degrades politely when you do rather
-than breaking.
+The ACRCloud key belongs to **whoever deploys the site**, not to visitors. That's what makes it usable by anyone, but it also means the free tier's monthly recognition limit is a *shared pool across all your visitors combined*.
+
+A typical song uses about two recognitions: the match, plus one confirming check. A pause or a song change adds one. Silent recordings are never sent, so an empty room costs nothing. When the pool runs out, the app says so politely rather than breaking.
 
 ---
 
@@ -89,15 +86,13 @@ Copy `.env.example` to `.env.local` and fill in your ACRCloud values, then:
 npm run dev
 ```
 
-Microphones require a secure context, so this works on `localhost` and on any
-`https://` site — but not over plain `http://` to another machine.
+Microphones require a secure context, so this works on `localhost` and on any `https://` site, but not over plain `http://` to another machine.
 
 ### Getting a key (one time, for whoever deploys it)
 
-1. Sign up at [acrcloud.com](https://www.acrcloud.com) — free, no card.
+1. Sign up at [acrcloud.com](https://www.acrcloud.com). It's free and needs no card.
 2. Create a project under **Audio & Video Recognition**.
-3. Set **Audio Source** to *Recorded Audio* — the sample comes from a
-   microphone in a real room, not a clean audio file.
+3. Set **Audio Source** to *Recorded Audio*, because the sample comes from a microphone in a real room, not a clean audio file.
 4. Set **Audio Engine** to *Audio Fingerprinting*.
 5. Copy the **Host**, **Access Key** and **Secret Key** into `.env.local`.
 
@@ -105,50 +100,52 @@ Microphones require a secure context, so this works on `localhost` and on any
 
 ## Deploying
 
-The app needs one server route, so it wants a host that can run a function —
-Vercel, Netlify and Cloudflare all do this on their free tiers. **Plain GitHub
-Pages will not work**, because it serves static files only and cannot keep a
-secret.
+The app needs one server route, so it wants a host that can run a function. Vercel and Netlify both work on their free tiers, and this repo is set up for both. **Plain GitHub Pages will not work**: it serves static files only and cannot keep a secret.
 
-On Vercel: import the repo, then set `ACR_HOST`, `ACR_ACCESS_KEY` and
-`ACR_ACCESS_SECRET` as Environment Variables. `api/identify.js` is picked up
-automatically.
+### Vercel
+
+1. Import the repo. Vercel detects Vite and picks up the functions in `api/` automatically.
+2. **Settings → Environment Variables**: add `ACR_HOST`, `ACR_ACCESS_KEY` and `ACR_ACCESS_SECRET`. Paste the bare values, with no quotes, and tick both **Production** and **Preview**.
+3. **Redeploy** (Deployments → the latest one → ⋯ → Redeploy). A deployment only sees the variables that existed when it was built, so adding them afterwards does nothing until you redeploy.
+4. Open `https://<your-site>/api/health`. It should say `"configured": true`. If it doesn't, it names exactly which variable is missing or still holds placeholder text.
+
+**If visitors are asked to log in to Vercel**, that's Vercel's *Deployment Protection*, not this app. It guards every URL except your production domain. Share the production domain (the one listed under **Domains** on the project page), or turn protection off under **Settings → Deployment Protection**.
+
+### Netlify
+
+Import the repo. `netlify.toml` sets up the build, and the functions in `netlify/functions/` serve the same `/api/*` routes. Add the same three variables under **Site configuration → Environment variables**, redeploy, and check `/api/health`.
 
 ### Why the key lives on the server
 
-An earlier version of this app had each visitor paste their own ACRCloud keys
-into the page. That kept the secret out of the repository, but it made the site
-unusable for anyone who hadn't already signed up for ACRCloud — which is
-everyone. Bad trade.
+An earlier version had each visitor paste their own ACRCloud keys into the page. That kept the secret out of the repository, but it made the site unusable for anyone who hadn't already signed up for ACRCloud, which is everyone.
 
-The obvious alternative is worse: a `.env` file read through
-`import.meta.env.VITE_*` gets **inlined into the production bundle at build
-time**, so the secret would ship inside a public JavaScript file for anyone to
-read. That's why none of these variables carry a `VITE_` prefix — they're read
-in the Node process and never handed to the client.
+The obvious alternative is worse. A `.env` file read through `import.meta.env.VITE_*` gets **inlined into the production bundle at build time**, so the secret would ship inside a public JavaScript file for anyone to read. That's why none of these variables carry a `VITE_` prefix: they're read in the server process and never handed to the client.
 
-`vite.config.ts` runs the same handler as the deployed function during
-`npm run dev`, so local and production behave identically with no second
-process to start.
+All three hosts (the Vercel function, the Netlify function and the dev server) run the same handler from `server/`, so local and production behave identically.
 
 ---
 
 ## Layout
 
 ```
-api/identify.js      serverless route (Vercel-style)
-server/identify.mjs  request signing and the ACRCloud call, shared by both
-                     the deployed function and the dev server
+api/                 Vercel functions (identify, health)
+netlify/functions/   Netlify functions (identify, health)
+server/
+  identify.mjs       config checks, request signing, the ACRCloud call, and
+                     every HTTP decision, shared by all three hosts
+  node-http.mjs      reading a request body however the platform left it
 src/
   lib/
-    audio.ts         microphone capture and WAV encoding
-    monitor.ts       continuous level monitor for stop detection
+    mic.ts           one continuous microphone session with a rolling buffer
+    audio.ts         resampling, levelling and WAV encoding
     identify.ts      thin client for this app's own /api/identify
-    lrclib.ts        lyric lookup, with duration-weighted fallback search
-    lrc.ts           LRC parser and active-line search
+    lrclib.ts        the multi-spelling lyric search and scoring
+    translit.ts      Cyrillic ↔ Latin, and script-neutral name comparison
+    lrc.ts           LRC parsing, active-line search, sung-length estimates
     calibration.ts   the persistent timing correction
   hooks/
-    useSongClock.ts  turns a match offset into a live playback position
+    useLiveLyrics.ts the listening, recognition and sync engine
+    useSongClock.ts  turns a match position into a live playback position
   components/        the interface
   styles/            design tokens and base styles
 ```
@@ -157,41 +154,25 @@ src/
 
 ## Notes on a few decisions
 
-**Every browser audio "enhancement" is switched off.** Echo cancellation, noise
-suppression and auto gain are all tuned to isolate a human voice and discard
-everything else — which is exactly the music being fingerprinted. Left on,
-recognition rates collapse.
+**Every browser audio "enhancement" is switched off.** Echo cancellation, noise suppression and auto gain are all tuned to isolate a human voice and discard everything else, which is exactly the music being fingerprinted. Left on, recognition rates collapse.
 
-**WAV, not the browser's native WebM/Opus.** `MediaRecorder` produces a
-different codec in every browser, and a lossy one, which smears the spectral
-detail the fingerprint depends on.
+**Captured at the device's rate, converted afterwards.** Asking the browser for an 8 kHz microphone works in Chrome but throws in Firefox. Recording at the native rate and resampling with an `OfflineAudioContext` works everywhere. The level is normalised first, so a quiet, distant recording keeps its detail.
 
-**The clock is anchored to when recording started**, not to when the server
-replied, so the recording duration and the network round trip cancel out
-instead of accumulating into a permanent lag. The capture is timestamped on the
-first audio frame that actually arrives — worklet start-up and device warm-up
-were otherwise being counted as elapsed song time.
+**One microphone session, with a 30-second rolling buffer.** A failed match retries by sliding the window six seconds forward rather than recording ten fresh ones, and background re-checks reuse audio that has already been heard.
 
-**Position is derived, never accumulated.** It's recomputed from the wall clock
-every frame, so backgrounding the tab — where `requestAnimationFrame` stops
-entirely — doesn't desynchronise anything. On return it reads the current time
-and lands in the right place.
+**Names are matched across scripts.** The recogniser and the lyric database often write the same song differently (a romanised name against the Cyrillic original), which made Russian and Kazakh songs look unrecognised when they had been identified fine. The lookup searches in both scripts and compares names in a script-neutral form. It also retries politely when LRCLIB throttles it, rather than reporting "no lyrics" for a song whose lyrics are right there.
 
-**Lines light up word by word.** LRC files only carry per-line timings, so word
-positions are interpolated across each line's duration — which is why words
-brighten on a soft ramp rather than snapping on like a hard karaoke wipe. This
-also solved a real usability problem: with only line-level highlighting,
-nudging the timing usually produced no visible change at all, so the control
-felt broken even though it was working.
+**The position is read from the matched slice.** The recogniser reports which part of the clip it matched and where that part sits in the track. The difference between the two is the position at the clip's first moment, which is what the clock is anchored to.
 
-**The lyric reel moves by `transform`, not `scrollTop`.** Scroll offsets can't
-be handed to the compositor, so a per-frame JavaScript scroll animation runs on
-the main thread and competes with React — the glide between lines never felt
-clean. A CSS transition on `transform` is composited off the main thread.
+**A pause holds the lyrics where the silence began**, not where it was noticed three seconds later. Holding at the noticing point put the lyrics three seconds ahead after every pause.
 
-**Nothing blurs the text.** Distant lines used to fade out of focus with
-`filter: blur()`, but animating a filter on text re-rasterises every glyph on
-every frame. All the softness now lives in the background instead.
+**Lines arrive a quarter-second early; words light up on time.** The glide to a new line takes a moment, and a line that starts moving exactly on its timestamp visibly lands after the singer has begun. So lines lead slightly, while the word-by-word highlight stays on the beat.
+
+**Words are paced by each song's tempo.** LRC files only say when a line starts. Assuming a line lasts until the next one made the highlight crawl across instrumental breaks. Instead, the song's own seconds-per-character is measured from its consecutive lines, and each line is paced from that.
+
+**Position is derived, never accumulated.** It's recomputed from the wall clock every frame, so a backgrounded tab (where `requestAnimationFrame` stops entirely) doesn't desynchronise anything.
+
+**The lyric reel moves by `transform`, and nothing blurs the text.** Transforms are animated by the compositor, off the main thread. Animating a `filter` on text would re-rasterise every glyph on every frame, so all the softness lives in the background instead.
 
 ---
 
@@ -199,22 +180,16 @@ every frame. All the softness now lives in the background instead.
 
 Worth being honest about what this can and can't do:
 
-- It needs a reasonably clear signal. A loud room, a distant speaker, or people
-  talking over the top will all defeat the fingerprint. **Proximity matters far
-  more than volume.**
-- It only matches what's in ACRCloud's catalogue — live takes, remixes and
-  obscure releases often aren't.
-- Lyrics depend on LRCLIB having an entry. Plenty of tracks have plain lyrics
-  but no timed ones; those are shown unsynced and clearly labelled.
-- Ambient sync is never sample-accurate. That's why the timing correction and
-  click-to-re-anchor exist.
-- The free tier is capped per month, so this isn't built for constant polling.
+- It needs a reasonably clear signal. A loud room, a distant speaker, or people talking over the top will all defeat the fingerprint. **Proximity matters far more than volume.**
+- It only matches what's in ACRCloud's catalogue. Live takes, remixes and very local releases often aren't there, and that includes a lot of Kazakh music.
+- Lyrics depend on LRCLIB having an entry. When a song is recognised but has no lyrics, the app names the song and says so, rather than pretending it didn't hear it.
+- Ambient sync is never sample-accurate. That's why the self-check, the timing correction and click-to-re-anchor exist.
+- The free tier is capped per month and shared by all visitors.
 
 ---
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
-Lyrics are fetched at runtime from LRCLIB and are not distributed with this
-software.
+Lyrics are fetched at runtime from LRCLIB and are not distributed with this software.

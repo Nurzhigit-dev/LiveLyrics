@@ -1,56 +1,17 @@
 import type { AppError } from '../types';
 
 /**
- * Microphone capture, encoded to WAV for the identification API.
+ * Audio utilities: preparing a recording for the recogniser, and turning
+ * microphone failures into something worth showing a person.
  *
- * Two decisions here matter more than they look:
- *
- * 1. Every piece of browser audio "enhancement" is switched OFF. Echo
- *    cancellation, noise suppression and auto gain are all tuned to isolate a
- *    human voice and throw away everything else — which is precisely the
- *    music we are trying to fingerprint. Left on, recognition rates collapse.
- *
- * 2. The output is WAV, not the browser's native WebM/Opus. MediaRecorder
- *    gives a different codec per browser, and a lossy one at that. Raw PCM in
- *    a WAV container is universally accepted and doesn't smear the spectral
- *    detail the fingerprint depends on.
+ * The recording itself lives in mic.ts.
  */
 
-/** 8 kHz mono is what the recognisers want, and keeps the upload small. */
-const TARGET_SAMPLE_RATE = 8000;
-
-/** Runs inside the audio thread and ships raw frames back to the main thread. */
-const WORKLET_SOURCE = `
-class CaptureProcessor extends AudioWorkletProcessor {
-  process(inputs) {
-    const channel = inputs[0] && inputs[0][0];
-    if (channel && channel.length) {
-      // Copy: the engine reuses this buffer on the next render quantum.
-      this.port.postMessage(new Float32Array(channel));
-    }
-    return true;
-  }
-}
-registerProcessor('capture', CaptureProcessor);
-`;
-
-export interface CaptureResult {
-  /** The recording, ready to POST. */
-  wav: Blob;
-  /** performance.now() at the moment recording actually began. */
-  startedAt: number;
-  sampleRate: number;
-}
-
-export interface CaptureOptions {
-  seconds: number;
-  /** Called ~50x/sec with a 0..1 loudness level, for the live meter. */
-  onLevel?: (level: number) => void;
-  signal?: AbortSignal;
-}
+/** What the recogniser's fingerprinter works at internally. */
+export const RECOGNITION_RATE = 8000;
 
 /** Turns a raw getUserMedia rejection into something worth showing a user. */
-function describeMicError(err: unknown): AppError {
+export function describeMicError(err: unknown): AppError {
   const name = err instanceof DOMException ? err.name : '';
   if (name === 'NotAllowedError' || name === 'SecurityError') {
     return {
@@ -84,170 +45,83 @@ export class MicError extends Error {
   }
 }
 
-/**
- * Opens the mic, records for `seconds`, and returns a WAV blob.
- * Always tears the stream down — a live mic indicator left burning in the tab
- * after the app is done with it is both a privacy smell and a battery drain.
- */
-export async function captureSample(opts: CaptureOptions): Promise<CaptureResult> {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    throw new MicError({
-      code: 'mic-unavailable',
-      message: 'This browser has no microphone API. Try Chrome, Edge or Firefox.',
-    });
-  }
-
-  let stream: MediaStream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-      },
-      video: false,
-    });
-  } catch (err) {
-    throw new MicError(describeMicError(err));
-  }
-
-  // Asking for the context's sample rate directly lets the browser do the
-  // resampling with a proper anti-aliasing filter, rather than us decimating
-  // by hand and introducing artefacts into the fingerprint.
-  let ctx: AudioContext;
-  try {
-    ctx = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
-  } catch {
-    ctx = new AudioContext(); // some browsers refuse a forced rate
-  }
-
-  const cleanup = () => {
-    for (const track of stream.getTracks()) track.stop();
-    void ctx.close();
-  };
-
-  try {
-    // A click opened this, so the context is allowed to start.
-    if (ctx.state === 'suspended') await ctx.resume();
-
-    const moduleUrl = URL.createObjectURL(
-      new Blob([WORKLET_SOURCE], { type: 'application/javascript' }),
-    );
-    try {
-      await ctx.audioWorklet.addModule(moduleUrl);
-    } finally {
-      URL.revokeObjectURL(moduleUrl);
-    }
-
-    const source = ctx.createMediaStreamSource(stream);
-    const capture = new AudioWorkletNode(ctx, 'capture');
-
-    // A worklet only runs while it is part of a live rendering graph, so it
-    // has to reach the destination. Routing through a silent gain node keeps
-    // it pulled without playing the mic back through the speakers — which
-    // would cause exactly the feedback howl we just disabled AEC to allow.
-    const mute = ctx.createGain();
-    mute.gain.value = 0;
-    source.connect(capture);
-    capture.connect(mute);
-    mute.connect(ctx.destination);
-
-    const sampleRate = ctx.sampleRate;
-    const needed = Math.ceil(sampleRate * opts.seconds);
-    const chunks: Float32Array[] = [];
-    let collected = 0;
-
-    /*
-     * Timestamped on the FIRST audio frame that actually arrives, not before
-     * the wait begins.
-     *
-     * Everything between connecting the graph and the first frame — worklet
-     * start-up, the device warming up, the initial buffer — would otherwise be
-     * counted as song time that had already elapsed, pushing the lyrics ahead
-     * of the music by a variable amount on every run. Anchoring to real audio
-     * removes that entirely.
-     */
-    let startedAt = performance.now();
-    let gotFirstFrame = false;
-
-    await new Promise<void>((resolve, reject) => {
-      const finish = () => {
-        capture.port.onmessage = null;
-        resolve();
-      };
-
-      if (opts.signal?.aborted) {
-        reject(new DOMException('Cancelled', 'AbortError'));
-        return;
-      }
-      opts.signal?.addEventListener(
-        'abort',
-        () => {
-          capture.port.onmessage = null;
-          reject(new DOMException('Cancelled', 'AbortError'));
-        },
-        { once: true },
-      );
-
-      capture.port.onmessage = (event: MessageEvent<Float32Array>) => {
-        const frame = event.data;
-
-        if (!gotFirstFrame) {
-          gotFirstFrame = true;
-          // This frame was captured over the render quantum just ended, so the
-          // audio it holds began roughly one frame-length ago.
-          startedAt = performance.now() - (frame.length / ctx.sampleRate) * 1000;
-        }
-
-        chunks.push(frame);
-        collected += frame.length;
-
-        if (opts.onLevel) {
-          // RMS is a far better match for perceived loudness than peak, so the
-          // meter moves with the music instead of spiking on transients.
-          let sum = 0;
-          for (let i = 0; i < frame.length; i++) sum += frame[i] * frame[i];
-          opts.onLevel(Math.min(1, Math.sqrt(sum / frame.length) * 4));
-        }
-
-        if (collected >= needed) finish();
-      };
-    });
-
-    source.disconnect();
-    capture.disconnect();
-    mute.disconnect();
-
-    return {
-      wav: encodeWav(flatten(chunks, needed), sampleRate),
-      startedAt,
-      sampleRate,
-    };
-  } finally {
-    cleanup();
-  }
+/** Root-mean-square level — a far better match for perceived loudness than peak. */
+export function rms(samples: Float32Array): number {
+  let sum = 0;
+  for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+  return samples.length ? Math.sqrt(sum / samples.length) : 0;
 }
 
-/** Concatenates the captured frames into one buffer of exactly `length`. */
-function flatten(chunks: Float32Array[], length: number): Float32Array {
-  const out = new Float32Array(length);
-  let written = 0;
-  for (const chunk of chunks) {
-    const room = length - written;
-    if (room <= 0) break;
-    out.set(chunk.length > room ? chunk.subarray(0, room) : chunk, written);
-    written += Math.min(chunk.length, room);
+/**
+ * Resamples with the browser's own resampler.
+ *
+ * An OfflineAudioContext renders the buffer at the new rate with a proper
+ * anti-aliasing filter. The earlier approach — asking the live AudioContext to
+ * run at 8 kHz — did the same job in Chrome but throws in Firefox, which
+ * refuses to connect a microphone to a context at a different rate from the
+ * device. Capturing at the device's own rate and converting afterwards works
+ * everywhere.
+ */
+async function resample(samples: Float32Array<ArrayBuffer>, from: number, to: number): Promise<Float32Array<ArrayBuffer>> {
+  if (from === to || samples.length === 0) return samples;
+  const length = Math.max(1, Math.round((samples.length * to) / from));
+  const ctx = new OfflineAudioContext(1, length, to);
+  const buffer = ctx.createBuffer(1, samples.length, from);
+  buffer.copyToChannel(samples, 0);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  source.start();
+  const rendered = await ctx.startRendering();
+  return rendered.getChannelData(0).slice();
+}
+
+/**
+ * Removes DC offset and brings the level up to a consistent loudness.
+ *
+ * A phone held across the room can record music peaking at a few percent of
+ * full scale. Converted straight to 16-bit, that uses only a handful of bits
+ * and throws away the fine spectral detail the fingerprint is built from.
+ * Scaling first keeps it. The gain is capped so near-silence is never pumped
+ * up into loud noise.
+ */
+function normalise(samples: Float32Array<ArrayBuffer>): Float32Array<ArrayBuffer> {
+  const n = samples.length;
+  if (!n) return samples;
+
+  let mean = 0;
+  for (let i = 0; i < n; i++) mean += samples[i];
+  mean /= n;
+
+  let peak = 0;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const v = samples[i] - mean;
+    peak = Math.max(peak, Math.abs(v));
+    sum += v * v;
   }
+  const level = Math.sqrt(sum / n);
+  if (peak < 1e-4 || level < 1e-5) return samples;
+
+  // Aim for -20 dBFS RMS, but never clip the peaks and never boost past 30x.
+  const gain = Math.min(0.1 / level, 0.98 / peak, 30);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = (samples[i] - mean) * gain;
   return out;
+}
+
+/** Turns captured audio into the WAV the recogniser wants: 8 kHz, mono, levelled. */
+export async function toRecognitionWav(samples: Float32Array<ArrayBuffer>, sampleRate: number): Promise<Blob> {
+  const resampled = await resample(samples, sampleRate, RECOGNITION_RATE);
+  return encodeWav(normalise(resampled), RECOGNITION_RATE);
 }
 
 /**
  * Wraps Float32 samples in a 16-bit PCM WAV container.
  *
  * The 44-byte header is a fixed recipe; the only interesting part is the
- * float-to-int conversion, which clamps first so that a sample slightly over
- * 1.0 wraps to silence-adjacent noise instead of overflowing to full scale.
+ * float-to-int conversion, which clamps first so a sample slightly over 1.0
+ * saturates instead of overflowing and wrapping round to the opposite sign.
  */
 export function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   const bytesPerSample = 2;

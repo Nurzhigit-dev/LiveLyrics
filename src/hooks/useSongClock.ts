@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /**
  * Where the song was, and when we knew it.
  *
- * `startedAt` is a performance.now() reading from the moment the microphone
- * began recording — not the moment the server replied. The recogniser reports
- * where the start of the submitted sample sits in the track, so anchoring to
- * the start of the recording makes both the recording duration and the network
- * round trip cancel out on their own.
+ * `startedAt` is a performance.now() reading from the moment the audio that
+ * was matched began — not the moment the server replied. The recogniser
+ * reports the song position for the start of that audio, so anchoring there
+ * makes the recording length and the network round trip cancel out on their
+ * own.
  */
 export interface Anchor {
-  /** performance.now() when recording began. */
+  /** performance.now() at the start of the matched audio. */
   startedAt: number;
   /** Seconds into the song at that instant. */
   songPosition: number;
@@ -38,59 +38,49 @@ export interface SongClock {
  * requestAnimationFrame stops firing entirely: on return it reads the current
  * time and lands in the right place rather than resuming from a stale counter.
  *
- * @param nudge   Persistent timing correction, in seconds.
- * @param running When false the clock holds its last value — used when the
- *                room has gone quiet and the music is presumed paused.
+ * @param nudge Persistent timing correction, in seconds.
+ * @param hold  When set, the clock shows exactly this position and stands
+ *              still — used while the music is paused. The caller decides
+ *              WHICH position (the moment the silence began), which is what
+ *              stops a pause from pushing the lyrics ahead.
  */
-export function useSongClock(anchor: Anchor | null, nudge = 0, running = true): SongClock {
-  const [position, setPosition] = useState(0);
+export function useSongClock(anchor: Anchor | null, nudge = 0, hold: number | null = null): SongClock {
+  const [tick, setTick] = useState(0);
 
-  // Refs so getPosition stays a stable identity while always seeing current values.
+  // Refs so getPosition stays a stable identity while always seeing current
+  // values. Synced in a layout effect — before paint, before any animation
+  // frame can read them — rather than during render.
   const anchorRef = useRef(anchor);
   const nudgeRef = useRef(nudge);
-  anchorRef.current = anchor;
-  nudgeRef.current = nudge;
+  const holdRef = useRef(hold);
+  useLayoutEffect(() => {
+    anchorRef.current = anchor;
+    nudgeRef.current = nudge;
+    holdRef.current = hold;
+  });
 
-  /** The position the clock was holding when it was paused. */
-  const frozenRef = useRef<number | null>(null);
-
-  const live = useCallback(() => {
+  const getPosition = useCallback(() => {
+    if (holdRef.current !== null) return holdRef.current;
     const a = anchorRef.current;
     if (!a) return 0;
     return a.songPosition + (performance.now() - a.startedAt) / 1000 + nudgeRef.current;
   }, []);
 
-  const getPosition = useCallback(
-    () => frozenRef.current ?? live(),
-    [live],
-  );
-
-  // Freeze on pause, and on resume shift the anchor forward by however long we
-  // were stopped, so the held position continues from exactly where it was
-  // rather than jumping ahead by the length of the pause.
   useEffect(() => {
-    if (!running) {
-      frozenRef.current = live();
-      return;
-    }
-    const held = frozenRef.current;
-    frozenRef.current = null;
-    if (held !== null && anchorRef.current) {
-      const a = anchorRef.current;
-      a.startedAt = performance.now() - (held - a.songPosition - nudgeRef.current) * 1000;
-    }
-  }, [running, live]);
-
-  useEffect(() => {
-    if (!anchor) {
-      setPosition(0);
-      return;
-    }
-
     let frame = 0;
-    let lastTenth = -1;
 
-    const tick = () => {
+    // Held or unanchored: park the ticking value on the held position. When
+    // the clock restarts it then continues from there, instead of flashing
+    // the position it had BEFORE the pause for a frame — enough to twitch the
+    // lyric reel back a line and forward again.
+    if (hold !== null || !anchor) {
+      const parked = hold ?? 0;
+      frame = requestAnimationFrame(() => setTick(parked));
+      return () => cancelAnimationFrame(frame);
+    }
+
+    let lastTenth = -1;
+    const loop = () => {
       const next = getPosition();
 
       // React only needs this ten times a second: the progress bar interpolates
@@ -99,14 +89,14 @@ export function useSongClock(anchor: Anchor | null, nudge = 0, running = true): 
       const tenth = Math.round(next * 10);
       if (tenth !== lastTenth) {
         lastTenth = tenth;
-        setPosition(next);
+        setTick(next);
       }
-      frame = requestAnimationFrame(tick);
+      frame = requestAnimationFrame(loop);
     };
 
-    frame = requestAnimationFrame(tick);
+    frame = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(frame);
-  }, [anchor, nudge, running, getPosition]);
+  }, [anchor, nudge, hold, getPosition]);
 
-  return { position, getPosition };
+  return { position: hold ?? (anchor ? tick : 0), getPosition };
 }

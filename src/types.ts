@@ -19,6 +19,8 @@ export type AppPhase =
 
 /** A track, once we know what it is. */
 export interface Track {
+  /** The recogniser's own id for this recording, when it gives one. */
+  id?: string;
   title: string;
   artist: string;
   album?: string;
@@ -30,6 +32,15 @@ export interface Track {
   /** Recogniser confidence, 0-100. A low score usually means the position
    *  is unreliable even when the title is right. */
   score?: number;
+  /** Every spelling of the title the recogniser knows — other scripts too. */
+  titleVariants?: string[];
+  artistVariants?: string[];
+}
+
+/** One recognition: the best match, plus the alternatives it considered. */
+export interface Identification {
+  track: Track;
+  candidates: Track[];
 }
 
 /** One timed line of a lyric file. */

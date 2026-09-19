@@ -118,3 +118,50 @@ export function findActiveIndex(lines: LyricLine[], time: number): number {
   }
   return found;
 }
+
+/** Assumed length of the final line, which has no following timestamp. */
+const LAST_LINE_SECONDS = 4;
+
+/** A typical sung pace, used until a song has enough lines to measure its own. */
+const DEFAULT_SECONDS_PER_CHAR = 0.11;
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * How long each line is actually SUNG for, in seconds.
+ *
+ * LRC only records when a line starts. The obvious assumption — that a line
+ * lasts until the next one begins — is badly wrong whenever an instrumental
+ * break follows it: the word-by-word highlight would crawl across the whole
+ * break, lighting words up long after they had been sung. That was a large
+ * part of the lyrics feeling "a little off" even when the line timing was
+ * right.
+ *
+ * Instead this learns each song's own pace. For lines that run straight into
+ * the next, the gap IS the sung length, which gives a seconds-per-character
+ * rate. The median of those rates is the tempo of this particular song — quick
+ * for rap, slow for a ballad — and each line's sung length is estimated from
+ * its own character count at that pace, never running past the real gap.
+ */
+export function computeSungSpans(lines: LyricLine[]): number[] {
+  const gaps = lines.map((line, i) =>
+    Math.max(0.2, (lines[i + 1]?.time ?? line.time + LAST_LINE_SECONDS) - line.time),
+  );
+  const chars = lines.map((line) => line.text.replace(/\s+/g, '').length);
+
+  // Median resists the minority of lines that are followed by a break.
+  const rates = lines
+    .map((_, i) => (chars[i] >= 6 && gaps[i] > 0.4 && gaps[i] < 12 ? gaps[i] / chars[i] : NaN))
+    .filter(Number.isFinite);
+  const perChar = rates.length >= 4 ? median(rates) : DEFAULT_SECONDS_PER_CHAR;
+
+  return lines.map((_, i) => {
+    if (!chars[i]) return gaps[i];                       // an instrumental marker
+    const estimate = Math.max(0.6, chars[i] * perChar * 1.12);
+    return Math.min(gaps[i] * 0.94, estimate);
+  });
+}

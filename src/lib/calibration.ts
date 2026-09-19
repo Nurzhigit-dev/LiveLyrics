@@ -12,7 +12,14 @@
  * every single song. Now you correct it once and it sticks.
  */
 
-const STORAGE_KEY = 'lyricwave.calibration';
+/*
+ * Versioned, and bumped to v2 deliberately. The timing model changed underneath
+ * any value saved before: lines now arrive slightly ahead of their timestamp,
+ * the recogniser's offset is read correctly, and a pause no longer pushes the
+ * lyrics ahead. A correction someone dialled in to compensate for those old
+ * errors would now push the lyrics the wrong way, so old values are dropped.
+ */
+const STORAGE_KEY = 'livelyrics.calibration.v2';
 
 /** Beyond a few seconds it is not calibration, it is a bad match. */
 const LIMIT = 5;

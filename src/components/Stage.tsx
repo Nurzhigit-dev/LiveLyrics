@@ -21,6 +21,8 @@ interface Props {
   listening: boolean;
   phase: AppPhase;
   level: number;
+  /** Overrides the default caption — a second attempt, a song's name, etc. */
+  caption?: string | null;
 }
 
 /**
@@ -31,8 +33,8 @@ interface Props {
  * to a quiet row underneath. An earlier version buried the button in the
  * corner of a poster layout, which looked striking and read as decoration.
  */
-export function Stage({ onListen, listening, phase, level }: Props) {
-  const caption = CAPTION[phase];
+export function Stage({ onListen, listening, phase, level, caption: override }: Props) {
+  const caption = override ?? CAPTION[phase];
   const delay = (i: number) => ({ '--i': i }) as CSSProperties;
 
   return (

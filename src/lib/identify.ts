@@ -1,4 +1,4 @@
-import type { Track } from '../types';
+import type { Identification, Track } from '../types';
 
 /**
  * Asks our own server what is playing.
@@ -30,11 +30,18 @@ interface ApiResponse {
   kind?: string;
   message?: string;
   track?: Track;
+  candidates?: Track[];
 }
 
-export async function identify(sample: Blob, timeoutMs = 20000): Promise<Track> {
+export async function identify(
+  sample: Blob,
+  signal?: AbortSignal,
+  timeoutMs = 20000,
+): Promise<Identification> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const onAbort = () => controller.abort();
+  signal?.addEventListener('abort', onAbort, { once: true });
 
   let payload: ApiResponse;
   try {
@@ -47,12 +54,14 @@ export async function identify(sample: Blob, timeoutMs = 20000): Promise<Track> 
     });
     payload = (await res.json()) as ApiResponse;
   } catch {
+    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
     throw new IdentifyError(
       'Could not reach the server. Check your connection and try again.',
       'network',
     );
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
   }
 
   if (payload.kind !== 'ok' || !payload.track) {
@@ -62,5 +71,7 @@ export async function identify(sample: Blob, timeoutMs = 20000): Promise<Track> 
     );
   }
 
-  return payload.track;
+  // An older deployment may not send candidates; the top match is always one.
+  const candidates = payload.candidates?.length ? payload.candidates : [payload.track];
+  return { track: payload.track, candidates };
 }

@@ -1,3 +1,12 @@
+import {
+  cleanTitle,
+  hasCyrillic,
+  primaryArtist,
+  similarity,
+  swapScript,
+  uniqueNames,
+} from './translit';
+
 /**
  * Client for LRCLIB (https://lrclib.net) — a community lyric database.
  *
@@ -20,9 +29,11 @@ export interface LrclibRecord {
   syncedLyrics: string | null;
 }
 
-export interface LyricQuery {
-  track: string;
-  artist: string;
+/** What we're looking for, with every spelling of it we know about. */
+export interface LyricTarget {
+  /** Most likely first. */
+  titles: string[];
+  artists: string[];
   album?: string;
   /** Track length in seconds, when the identifier reported one. */
   duration?: number;
@@ -43,96 +54,200 @@ export class LyricsError extends Error {
   }
 }
 
-/**
- * Aborts a fetch that hangs. Without this a dead network leaves the app stuck
- * in its "fetching" phase forever with no way back.
- */
-async function getJson(url: string, timeoutMs = 8000): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    });
-    if (res.status === 404) return null;
-    if (!res.ok) throw new LyricsError(`LRCLIB returned ${res.status}.`, 'network');
-    return await res.json();
-  } catch (err) {
-    if (err instanceof LyricsError) throw err;
-    // AbortError, DNS failure, offline, CORS — all the same to the user.
-    throw new LyricsError('Could not reach the lyrics database.', 'network');
-  } finally {
-    clearTimeout(timer);
-  }
-}
+/** A result this good from the first round is taken without searching further. */
+const GOOD_ENOUGH = 0.8;
 
-/**
- * The `/get` endpoint wants an exact artist+track match and optionally a
- * duration, which it uses to disambiguate between different releases of the
- * same song. It is the most accurate route, so it is tried first.
- */
-async function getExact(q: LyricQuery): Promise<LrclibRecord | null> {
-  const params = new URLSearchParams({
-    track_name: q.track,
-    artist_name: q.artist,
+/** Longest we'll wait when LRCLIB asks us to slow down. */
+const MAX_BACKOFF_MS = 3000;
+
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(new DOMException('Cancelled', 'AbortError'));
+    }, { once: true });
   });
-  if (q.album) params.set('album_name', q.album);
-  if (q.duration && Number.isFinite(q.duration)) {
-    params.set('duration', String(Math.round(q.duration)));
-  }
-  const data = await getJson(`${BASE}/get?${params}`);
-  return (data as LrclibRecord | null) ?? null;
-}
 
 /**
- * Falls back to a fuzzy search. Results are ranked so that anything with
- * synced lyrics wins, then by how close the duration is to the track we
- * actually heard — that is what separates a 3-minute radio edit from a
- * 7-minute album version of the same title.
+ * One request, with a timeout and a single polite retry when throttled.
+ *
+ * The retry matters more than it looks. LRCLIB rate-limits bursts, and a
+ * lookup fires several searches at once. Without it, a throttled search
+ * quietly contributed no results — and a song whose lyrics were sitting right
+ * there got reported as having none.
  */
-async function search(q: LyricQuery): Promise<LrclibRecord | null> {
-  const params = new URLSearchParams({
-    track_name: q.track,
-    artist_name: q.artist,
-  });
-  const data = await getJson(`${BASE}/search?${params}`);
-  const results = Array.isArray(data) ? (data as LrclibRecord[]) : [];
-  if (results.length === 0) return null;
-
-  const scored = results
-    .map((r) => {
-      let score = 0;
-      if (r.syncedLyrics) score += 1000; // synced beats everything else
-      if (q.duration && r.duration) {
-        // Penalise by how many seconds off the length is, capped so a wildly
-        // wrong duration can still lose to a synced result.
-        score -= Math.min(500, Math.abs(r.duration - q.duration) * 20);
+async function getJson(url: string, signal?: AbortSignal, timeoutMs = 8000): Promise<unknown> {
+  for (let attempt = 0; ; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const onAbort = () => controller.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: { Accept: 'application/json' },
+      });
+      if (res.status === 404) return null;
+      if ((res.status === 429 || res.status === 503) && attempt === 0) {
+        const hinted = Number(res.headers.get('Retry-After')) * 1000;
+        await sleep(Math.min(MAX_BACKOFF_MS, hinted > 0 ? hinted : 900 + Math.random() * 600), signal);
+        continue;
       }
-      return { r, score };
-    })
-    .sort((a, b) => b.score - a.score);
+      if (!res.ok) throw new LyricsError(`LRCLIB returned ${res.status}.`, 'network');
+      return await res.json();
+    } catch (err) {
+      if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+      if (err instanceof LyricsError) throw err;
+      // Timeout, DNS failure, offline, CORS — all the same to the user.
+      throw new LyricsError('Could not reach the lyrics database.', 'network');
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    }
+  }
+}
 
-  return scored[0].r;
+/** The exact-signature endpoint. The most precise route when the names line up. */
+async function getExact(
+  track: string, artist: string, album: string | undefined, duration: number | undefined,
+  signal?: AbortSignal,
+): Promise<LrclibRecord[]> {
+  const params = new URLSearchParams({ track_name: track, artist_name: artist });
+  if (album) params.set('album_name', album);
+  if (duration && Number.isFinite(duration)) params.set('duration', String(Math.round(duration)));
+  const data = await getJson(`${BASE}/get?${params}`, signal);
+  return data ? [data as LrclibRecord] : [];
+}
+
+type SearchParams = { q: string } | { track_name: string; artist_name: string };
+
+async function search(params: SearchParams, signal?: AbortSignal): Promise<LrclibRecord[]> {
+  const data = await getJson(`${BASE}/search?${new URLSearchParams(params)}`, signal);
+  return Array.isArray(data) ? (data as LrclibRecord[]) : [];
+}
+
+/** Every spelling of the title worth comparing against: original, cleaned, other script. */
+function titleForms(titles: string[]): string[] {
+  const base = uniqueNames(titles.flatMap((t) => [t, cleanTitle(t)]));
+  return uniqueNames([...base, ...base.map((t) => swapScript(cleanTitle(t)))]);
+}
+
+function artistForms(artists: string[]): string[] {
+  const base = uniqueNames(artists.flatMap((a) => [primaryArtist(a), a]));
+  return uniqueNames([...base, ...base.map((a) => swapScript(primaryArtist(a)))]);
+}
+
+/**
+ * How well one LRCLIB record fits what we heard, or -1 to reject it outright.
+ *
+ * Duration carries real weight because it's what separates a 3-minute radio
+ * edit from a 7-minute album version of the same title — and the timings in
+ * the wrong one would be off for the whole song.
+ */
+function score(r: LrclibRecord, titles: string[], artists: string[], duration?: number): number {
+  const recordTitle = cleanTitle(r.trackName ?? '');
+  const t = Math.max(0, ...titles.map((x) => similarity(recordTitle, cleanTitle(x))));
+  const a = Math.max(0, ...artists.map((x) => Math.max(
+    similarity(r.artistName ?? '', x),
+    similarity(primaryArtist(r.artistName ?? ''), x),
+  )));
+  const delta = duration && r.duration ? Math.abs(r.duration - duration) : null;
+
+  if (t < 0.55) return -1;
+  if (delta !== null && delta > 25) return -1;             // a different recording entirely
+  // A title-only search also finds covers by other artists. Only let an artist
+  // mismatch through when the length pins it to the same recording anyway —
+  // which is what happens when the two databases romanise a name differently.
+  if (a < 0.4 && !(delta !== null && delta <= 3 && t >= 0.85)) return -1;
+
+  const d = delta === null ? 0.5 : delta <= 2 ? 1 : delta <= 5 ? 0.6 : delta <= 12 ? 0.25 : 0;
+  return 0.4 * t + 0.35 * a + 0.25 * d
+    + (r.syncedLyrics ? 0.2 : 0)
+    + (r.plainLyrics ? 0.02 : 0)
+    - (r.instrumental ? 0.3 : 0);
+}
+
+function pickBest(pool: LrclibRecord[], titles: string[], artists: string[], duration?: number) {
+  let best: { record: LrclibRecord; score: number } | null = null;
+  const seen = new Set<number>();
+  for (const record of pool) {
+    if (!record || seen.has(record.id)) continue;
+    seen.add(record.id);
+    const s = score(record, titles, artists, duration);
+    if (s >= 0 && (!best || s > best.score)) best = { record, score: s };
+  }
+  return best;
+}
+
+/** Runs requests together; a failed one simply contributes no results. */
+async function gather(requests: Array<Promise<LrclibRecord[]>>) {
+  const settled = await Promise.allSettled(requests);
+  const records = settled.flatMap((s) => (s.status === 'fulfilled' ? s.value : []));
+  const aborted = settled.find(
+    (s) => s.status === 'rejected' && s.reason instanceof DOMException && s.reason.name === 'AbortError',
+  );
+  if (aborted) throw (aborted as PromiseRejectedResult).reason;
+  const allFailed = settled.length > 0 && settled.every((s) => s.status === 'rejected');
+  return { records, allFailed };
 }
 
 /**
  * Finds the best lyric record for a track.
  *
+ * Two rounds, so the common case stays cheap:
+ *
+ *  1. The exact signature plus a straight search under the names we were
+ *     given. Most songs are settled here in one round trip.
+ *  2. Only if that found nothing convincing: search again in the other
+ *     script, by cleaned title alone, and by artist + title as free text.
+ *     This is the round that finds Cyrillic-filed lyrics for a
+ *     Latin-identified song, and vice versa.
+ *
  * Throws a LyricsError describing exactly which way it failed, so the UI can
  * say "this song is instrumental" instead of a generic "something went wrong".
  */
-export async function fetchLyrics(q: LyricQuery): Promise<LrclibRecord> {
-  const record = (await getExact(q)) ?? (await search(q));
+export async function findLyrics(target: LyricTarget, signal?: AbortSignal): Promise<LrclibRecord> {
+  const titles = titleForms(target.titles);
+  const artists = artistForms(target.artists);
+  if (titles.length === 0) throw new LyricsError('No lyrics filed for this track yet.', 'notfound');
 
-  if (!record) {
-    throw new LyricsError('No lyrics filed for this track yet.', 'notfound');
+  const title = titles[0];
+  const artist = artists[0] ?? '';
+  const cleaned = cleanTitle(title);
+
+  // Round 1.
+  const first = await gather([
+    getExact(title, artist, target.album, target.duration, signal),
+    search({ track_name: cleaned, artist_name: artist }, signal),
+    search({ q: `${artist} ${cleaned}`.trim() }, signal),
+  ]);
+
+  let best = pickBest(first.records, titles, artists, target.duration);
+
+  // Round 2, only when round 1 wasn't convincing.
+  if (!best || best.score < GOOD_ENOUGH || !best.record.syncedLyrics) {
+    const otherTitle = titles.find((t) => hasCyrillic(t) !== hasCyrillic(title));
+    const otherArtist = artists.find((a) => hasCyrillic(a) !== hasCyrillic(artist));
+    const plans: SearchParams[] = [{ q: cleaned }];
+    if (otherTitle) {
+      plans.push({ track_name: cleanTitle(otherTitle), artist_name: otherArtist ?? artist });
+      plans.push({ q: cleanTitle(otherTitle) });
+    }
+    if (otherArtist) plans.push({ q: `${otherArtist} ${cleanTitle(otherTitle ?? title)}` });
+
+    const second = await gather(plans.map((p) => search(p, signal)));
+    best = pickBest([...first.records, ...second.records], titles, artists, target.duration);
+
+    if (!best && first.allFailed && second.allFailed) {
+      throw new LyricsError('Could not reach the lyrics database.', 'network');
+    }
   }
-  if (record.instrumental) {
-    throw new LyricsError('This track is marked instrumental.', 'instrumental');
-  }
-  if (!record.syncedLyrics && !record.plainLyrics) {
+
+  if (!best) throw new LyricsError('No lyrics filed for this track yet.', 'notfound');
+  if (best.record.instrumental) throw new LyricsError('This track is marked instrumental.', 'instrumental');
+  if (!best.record.syncedLyrics && !best.record.plainLyrics) {
     throw new LyricsError('The entry exists but has no lyrics attached.', 'notfound');
   }
-  return record;
+  return best.record;
 }
