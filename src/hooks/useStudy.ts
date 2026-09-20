@@ -4,10 +4,9 @@ import { defineWord, type Definition } from '../lib/dictionary';
 import {
   cleanWord,
   lookupWord,
-  pickPair,
+  otherTarget,
   translateLines,
   TranslateError,
-  type Lang,
   type TargetLang,
   type WordEntry,
 } from '../lib/translate';
@@ -22,34 +21,28 @@ import {
  * ref-based rules intact — this hook is ordinary React state, because none of
  * it is read from an asynchronous callback registered minutes earlier.
  *
- * Both pieces of state carry the `scope` they were fetched for, and anything
- * fetched for a different scope is simply not handed out. That is what makes
- * changing song or language instant: nothing has to be cleared, so there is
- * no frame in which the previous song's translations are still on screen
- * under the new song's words.
+ * Both pieces of state carry the song and language they were fetched for, and
+ * anything fetched for a different one is simply not handed out. That is what
+ * makes changing song or language instant: nothing has to be cleared, so
+ * there is no frame in which the previous song's translations are still on
+ * screen under the new song's words.
  */
 
-/** Off, or the language the listener is reading in. */
-export type StudyLang = TargetLang | null;
+const ON_KEY = 'livelyrics.study.on';
+const TARGET_KEY = 'livelyrics.study.target';
 
-const STORE = 'livelyrics.study.lang';
-
-/** Off → Russian → Kazakh → off. One button, no menu. */
-const CYCLE: StudyLang[] = [null, 'ru', 'kk'];
-
-function loadLang(): StudyLang {
+function load<T>(key: string, ok: (v: string) => T | null, fallback: T): T {
   try {
-    const saved = localStorage.getItem(STORE);
-    return saved === 'ru' || saved === 'kk' ? saved : null;
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : ok(raw) ?? fallback;
   } catch {
-    return null;
+    return fallback;
   }
 }
 
-function saveLang(lang: StudyLang) {
+function save(key: string, value: string) {
   try {
-    if (lang) localStorage.setItem(STORE, lang);
-    else localStorage.removeItem(STORE);
+    localStorage.setItem(key, value);
   } catch {
     // Private window, or storage disabled. The choice just won't be remembered.
   }
@@ -71,84 +64,104 @@ export interface WordCard {
 
 export type StudyStatus = 'off' | 'loading' | 'ready' | 'error';
 
-/** Which song, in which direction. A new object means everything is stale. */
-type Scope = { from: Lang; to: Lang };
-
 interface Translated {
-  scope: Scope;
+  /** What this was fetched for. Anything else is another song's answer. */
+  forTexts: string[];
+  forTarget: TargetLang;
+  /** The language actually used, which differs when the song is already in
+   *  the one that was asked for. */
+  to: TargetLang;
   map: ReadonlyMap<string, string>;
+  /** The language the translator decided the song is in. */
+  detected: string | null;
   error: string | null;
 }
 
 const EMPTY: ReadonlyMap<string, string> = new Map();
 
-export function useStudy(lines: LyricLine[]) {
-  const [lang, setLang] = useState<StudyLang>(loadLang);
+export function useStudy(lyricLines: LyricLine[]) {
+  const [on, setOn] = useState(() => load(ON_KEY, (v) => v === '1', false));
+  const [target, setTargetState] = useState<TargetLang>(() =>
+    load<TargetLang>(TARGET_KEY, (v) => (v === 'ru' || v === 'en' ? v : null), 'ru'),
+  );
   const [result, setResult] = useState<Translated | null>(null);
-  const [card, setCard] = useState<{ scope: Scope; data: WordCard } | null>(null);
+  const [card, setCard] = useState<{ forTexts: string[]; to: TargetLang; data: WordCard } | null>(null);
 
   const cardRef = useRef<AbortController | null>(null);
 
   const texts = useMemo(
-    () => [...new Set(lines.map((l) => l.text.trim()).filter(Boolean))],
-    [lines],
+    () => [...new Set(lyricLines.map((l) => l.text.trim()).filter(Boolean))],
+    [lyricLines],
   );
-
-  /**
-   * Which way the translation runs, and the identity everything hangs off.
-   *
-   * The direction is decided from the lyrics themselves rather than from the
-   * setting, so a Russian song opened with Russian selected shows English
-   * instead of translating the words into the language they are already in.
-   */
-  const pair = useMemo<Scope | null>(() => {
-    if (!lang) return null;
-    const sample = texts.slice(0, 6).join(' ');
-    return sample ? pickPair(sample, lang) : null;
-  }, [lang, texts]);
 
   /* Translate the whole song at once.
    *
    * Lines are batched, so this is one or two requests rather than forty, and
-   * translating everything up front means scrolling ahead — or opening the
-   * line picker — shows translated text immediately instead of a trail of
-   * placeholders filling in behind the reader. */
+   * translating everything up front means scrolling ahead shows translated
+   * text immediately instead of a trail of placeholders filling in behind the
+   * reader. */
   useEffect(() => {
-    if (!pair || texts.length === 0) return;
+    if (!on || texts.length === 0) return;
 
     const controller = new AbortController();
-    const settle = (map: ReadonlyMap<string, string>, error: string | null) => {
-      if (!controller.signal.aborted) setResult({ scope: pair, map, error });
+    const { signal } = controller;
+
+    const run = async (): Promise<Translated> => {
+      let to = target;
+      let batch = await translateLines(texts, to, signal);
+
+      // The song turned out to be written in the language it was going to be
+      // translated into. Rather than showing a screen of nothing, read it in
+      // the other one — which, with two targets, needs no choosing.
+      if (batch.detected === to) {
+        to = otherTarget(to);
+        batch = await translateLines(texts, to, signal);
+      }
+      return { forTexts: texts, forTarget: target, to, map: batch.map, detected: batch.detected, error: null };
     };
 
-    translateLines(texts, pair.from, pair.to, controller.signal)
-      .then((map) => settle(map, null))
+    run()
+      .then((next) => {
+        if (!signal.aborted) setResult(next);
+      })
       .catch((err: unknown) => {
-        if (err instanceof DOMException) return;
-        settle(
-          EMPTY,
-          err instanceof TranslateError && err.kind === 'quota'
-            ? 'The free translator has hit its limit for today. It resets tomorrow.'
-            : 'Couldn’t reach the translator. Check your connection and try again.',
-        );
+        if (signal.aborted || err instanceof DOMException) return;
+        setResult({
+          forTexts: texts,
+          forTarget: target,
+          to: target,
+          map: EMPTY,
+          detected: null,
+          error:
+            err instanceof TranslateError && err.kind === 'quota'
+              ? 'The free translator has hit its limit for today. It resets tomorrow.'
+              : 'Couldn’t reach the translator. Check your connection and try again.',
+        });
       });
 
     return () => controller.abort();
-  }, [pair, texts]);
+  }, [on, texts, target]);
 
   useEffect(() => () => cardRef.current?.abort(), []);
 
-  // Anything fetched for another song or another language is not this one's.
-  const current = result && result.scope === pair ? result : null;
+  // Anything fetched for another song or another choice is not this one's.
+  const current = result && result.forTexts === texts && result.forTarget === target ? result : null;
   const translations = current?.map ?? EMPTY;
-  const visibleCard = card && card.scope === pair ? card.data : null;
+
+  /** The language actually on screen — see the note in the effect above. */
+  const effective: TargetLang = current?.to ?? target;
+  /** The song's own language, once a translator has told us. */
+  const detected = current?.detected ?? null;
 
   const status: StudyStatus =
-    !pair ? 'off'
+    !on ? 'off'
     : texts.length === 0 ? 'ready'
     : !current ? 'loading'
     : current.error ? 'error'
     : 'ready';
+
+  const visibleCard =
+    card && card.forTexts === texts && card.to === effective ? card.data : null;
 
   const translationFor = useCallback(
     (text: string) => translations.get(text.trim()),
@@ -158,7 +171,7 @@ export function useStudy(lines: LyricLine[]) {
   /** Look one word up. The translation lands first; the definition follows. */
   const openWord = useCallback(
     (raw: string, line: string, lineIndex: number) => {
-      if (!pair) return;
+      if (!on) return;
       const word = cleanWord(raw);
       if (!word) return;
 
@@ -174,7 +187,8 @@ export function useStudy(lines: LyricLine[]) {
         );
 
       setCard({
-        scope: pair,
+        forTexts: texts,
+        to: effective,
         data: { word, line, lineIndex, lineTranslation: translations.get(line.trim()), loading: true },
       });
 
@@ -184,7 +198,7 @@ export function useStudy(lines: LyricLine[]) {
         if (!signal.aborted && definitions.length) amend({ definitions });
       });
 
-      lookupWord(word, pair.from, pair.to, signal)
+      lookupWord(word, effective, signal)
         .then((entry) => {
           if (!signal.aborted) amend({ entry, loading: false });
         })
@@ -199,7 +213,7 @@ export function useStudy(lines: LyricLine[]) {
           });
         });
     },
-    [pair, translations],
+    [on, effective, texts, translations],
   );
 
   const closeWord = useCallback(() => {
@@ -207,26 +221,34 @@ export function useStudy(lines: LyricLine[]) {
     setCard(null);
   }, []);
 
-  const cycleLang = useCallback(() => {
-    setLang((prev) => {
-      const next = CYCLE[(CYCLE.indexOf(prev) + 1) % CYCLE.length];
-      saveLang(next);
-      return next;
+  const toggle = useCallback(() => {
+    setOn((prev) => {
+      save(ON_KEY, prev ? '0' : '1');
+      return !prev;
     });
   }, []);
 
+  /** Choosing a language also turns the view on, which is what tapping it means. */
+  const setTarget = useCallback((next: TargetLang) => {
+    save(TARGET_KEY, next);
+    setTargetState(next);
+    setOn(true);
+    save(ON_KEY, '1');
+  }, []);
+
   return {
-    lang,
-    /** True while the listener is reading in a second language. */
-    on: lang !== null,
-    /** Which way the translation runs, for labelling the UI honestly. */
-    pair,
+    on,
+    /** What the control should show as chosen. */
+    target: effective,
+    /** The song's own language, so the control can rule that option out. */
+    detected,
     status,
     error: current?.error ?? null,
     translationFor,
     card: visibleCard,
     openWord,
     closeWord,
-    cycleLang,
+    toggle,
+    setTarget,
   };
 }

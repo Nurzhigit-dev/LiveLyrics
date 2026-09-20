@@ -6,8 +6,10 @@ import { Stage } from './components/Stage';
 import { LyricStage } from './components/LyricStage';
 import { Notice } from './components/Notice';
 import { TransportBar } from './components/TransportBar';
-import { SyncControls, NUDGE_STEP } from './components/SyncControls';
+import { SyncBar } from './components/SyncBar';
+import { PlayControl, ReadingTools, SessionActions } from './components/Controls';
 import { WordCard } from './components/WordCard';
+import { NUDGE_STEP } from './lib/calibration';
 import { SAMPLE_SECONDS, useLiveLyrics } from './hooks/useLiveLyrics';
 import { useStudy } from './hooks/useStudy';
 
@@ -18,9 +20,23 @@ import { useStudy } from './hooks/useStudy';
 export default function App() {
   const lyrics = useLiveLyrics();
   const study = useStudy(lyrics.lines);
-  const { phase, busy, showLyrics, synced, picking, notice, nudge } = lyrics;
+  const { phase, busy, showLyrics, synced, adjusting, notice, nudge } = lyrics;
 
   const toggleListen = () => (busy ? lyrics.stop() : void lyrics.listen());
+
+  /**
+   * How long the song is, for the timeline.
+   *
+   * The recogniser usually reports a duration, but not always — and a
+   * timeline with no length is a bar you cannot aim at. The last lyric line
+   * plus a little is a good enough stand-in: it is always at least as long as
+   * the words, which is all of the song anyone is trying to find a place in.
+   */
+  const duration = useMemo(() => {
+    if (lyrics.track?.duration) return lyrics.track.duration;
+    const last = lyrics.lines[lyrics.lines.length - 1];
+    return last ? last.time + 30 : 0;
+  }, [lyrics.track, lyrics.lines]);
 
   /*
    * Arrow keys nudge the timing while lyrics are on screen.
@@ -39,15 +55,16 @@ export default function App() {
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
 
       // Escape closes whatever is open, innermost first.
-      if (event.key === 'Escape' && (picking || study.card)) {
+      if (event.key === 'Escape' && (study.card || adjusting)) {
         event.preventDefault();
         if (study.card) study.closeWord();
-        else lyrics.stopPicking();
+        else lyrics.endAdjust();
         return;
       }
 
-      // While picking, arrows and space belong to scrolling the list.
-      if (picking) return;
+      // While the timeline is open, the arrows belong to it: it is a slider,
+      // and moving the song is the coarser version of the same job.
+      if (adjusting) return;
 
       if (event.key === ' ' || event.key === 'Spacebar') {
         // Not while a button has focus: space is how a button is pressed, and
@@ -66,18 +83,17 @@ export default function App() {
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [showLyrics, synced, picking, nudge, lyrics, study]);
+  }, [showLyrics, synced, adjusting, nudge, lyrics, study]);
 
   // Readouts only ever show what is actually true right now.
   const readouts = useMemo(() => {
     const out: string[] = [];
     if (phase === 'listening') out.push(`${SAMPLE_SECONDS}s sample`);
     if (lyrics.activity) out.push(lyrics.activity);
-    if (picking) out.push('choosing a line');
     if (study.status === 'loading') out.push('translating');
     if (showLyrics && !synced) out.push('unsynced');
     return out;
-  }, [phase, lyrics.activity, picking, showLyrics, synced, study.status]);
+  }, [phase, lyrics.activity, showLyrics, synced, study.status]);
 
   return (
     <>
@@ -88,6 +104,11 @@ export default function App() {
         readouts={readouts}
         level={lyrics.level}
         label={lyrics.pausedBy === 'user' ? 'paused' : undefined}
+        actions={
+          showLyrics ? (
+            <SessionActions busy={busy} onRelisten={() => void lyrics.listen()} onReset={lyrics.reset} />
+          ) : null
+        }
       />
 
       {showLyrics ? (
@@ -96,11 +117,10 @@ export default function App() {
           spans={lyrics.spans}
           activeIndex={lyrics.activeIndex}
           synced={synced}
-          picking={picking}
           getPosition={lyrics.getPosition}
           onSeekToLine={synced ? lyrics.seekToLine : undefined}
           translate={study.on ? study.translationFor : undefined}
-          translationLang={study.pair?.to}
+          translationLang={study.on ? study.target : undefined}
           studyOn={study.on}
           onWord={study.openWord}
         />
@@ -129,10 +149,10 @@ export default function App() {
         <p className="study-error label" role="status">{study.error}</p>
       )}
 
-      {showLyrics && study.card && study.pair && (
+      {showLyrics && study.card && (
         <WordCard
           card={study.card}
-          to={study.pair.to}
+          to={study.target}
           onClose={study.closeWord}
           onSeekToLine={
             synced
@@ -145,25 +165,34 @@ export default function App() {
         />
       )}
 
+      {showLyrics && adjusting && synced && (
+        <SyncBar
+          duration={duration}
+          position={lyrics.position}
+          lines={lyrics.lines}
+          nudge={lyrics.calibration}
+          onNudge={nudge}
+          onScrub={lyrics.scrubTo}
+          onCommit={lyrics.commitScrub}
+          onClose={lyrics.endAdjust}
+        />
+      )}
+
       <TransportBar
         track={showLyrics ? lyrics.track : null}
         position={lyrics.position}
-        actions={
+        centre={showLyrics && synced ? <PlayControl paused={lyrics.paused} onToggle={lyrics.togglePause} /> : null}
+        end={
           showLyrics ? (
-            <SyncControls
-              nudge={lyrics.calibration}
-              synced={synced}
-              paused={lyrics.paused}
-              picking={picking}
-              busy={busy}
-              studyLang={study.lang}
-              onCycleStudy={study.cycleLang}
-              onNudge={nudge}
-              onTogglePause={lyrics.togglePause}
-              onPick={lyrics.startPicking}
-              onCancelPick={lyrics.stopPicking}
-              onReset={lyrics.reset}
-              onRelisten={() => void lyrics.listen()}
+            <ReadingTools
+              canAdjust={synced}
+              adjusting={adjusting}
+              onAdjust={adjusting ? lyrics.endAdjust : lyrics.startAdjust}
+              studyOn={study.on}
+              target={study.target}
+              detected={study.detected}
+              onToggleStudy={study.toggle}
+              onSetTarget={study.setTarget}
             />
           ) : null
         }

@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react';
 import type { WordCard as Card } from '../hooks/useStudy';
-import { LANG_NAMES, type Lang } from '../lib/translate';
+import { languageName, type TargetLang } from '../lib/translate';
 import './WordCard.css';
 
 interface Props {
   card: Card;
-  /** Which way the translation ran, so the card can say so. */
-  to: Lang;
+  /** The language it was translated into, so the card can say so. */
+  to: TargetLang;
   onClose: () => void;
   /** Start the lyrics again from the line this word came from. */
   onSeekToLine?: () => void;
@@ -42,7 +42,7 @@ export function WordCard({ card, to, onClose, onSeekToLine }: Props) {
       <div className="wordcard__inner">
         <header className="wordcard__head">
           <h2 className="wordcard__word">{card.word}</h2>
-          <span className="label wordcard__lang">{LANG_NAMES[to]}</span>
+          <span className="label wordcard__lang">{languageName(to)}</span>
           <button
             ref={closeRef}
             type="button"

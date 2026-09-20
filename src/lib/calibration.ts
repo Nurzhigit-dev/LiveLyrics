@@ -24,6 +24,18 @@ const STORAGE_KEY = 'livelyrics.calibration.v2';
 /** Beyond a few seconds it is not calibration, it is a bad match. */
 const LIMIT = 5;
 
+/**
+ * One press of the fine stepper, and one press of an arrow key.
+ *
+ * This was half a second, which was too coarse to land on a beat — and worse,
+ * a nudge often produced no visible change at all, because the highlight only
+ * moves when the clock crosses a line boundary. Press twice, see nothing, and
+ * you reasonably conclude the button is broken. The word-by-word fill on the
+ * active line is what actually fixed that: now every nudge moves something
+ * immediately, whether or not a line change is due.
+ */
+export const NUDGE_STEP = 0.25;
+
 export function loadCalibration(): number {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);

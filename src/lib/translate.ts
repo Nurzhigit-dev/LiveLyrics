@@ -1,5 +1,3 @@
-import { hasCyrillic } from './translit';
-
 /**
  * Translation for the study view: whole lyric lines, and single words.
  *
@@ -18,21 +16,39 @@ import { hasCyrillic } from './translit';
  *      at roughly 5,000 characters a day per address and knows nothing about
  *      parts of speech.
  *
+ * The song's own language is never assumed. Both providers detect it, so a
+ * French or Spanish or Kazakh track reads just as well as an English one —
+ * only the language being read *into* is a choice, and there are two of them.
+ *
  * Everything translated is cached in the browser, so a chorus costs one
  * translation however many times it comes round, and a song you play again
  * tomorrow costs nothing at all.
  */
 
-export type Lang = 'en' | 'ru' | 'kk';
+/** The languages you can read a song in. The song's own language is detected. */
+export type TargetLang = 'ru' | 'en';
 
-/** What the listener asked for. English is the language being studied. */
-export type TargetLang = 'ru' | 'kk';
+export const TARGETS: TargetLang[] = ['ru', 'en'];
 
-export const LANG_NAMES: Record<Lang, string> = {
-  en: 'English',
-  ru: 'Русский',
-  kk: 'Qazaqşa',
-};
+/** The other one. With two targets this is the whole of the arithmetic. */
+export const otherTarget = (lang: TargetLang): TargetLang => (lang === 'ru' ? 'en' : 'ru');
+
+/** What the segmented control prints. Short, because the control is small. */
+export const TARGET_LABEL: Record<TargetLang, string> = { ru: 'RU', en: 'EN' };
+
+/**
+ * "fr" → "French". Any language can turn up as the source now, so the names
+ * come from the platform rather than from a table this file would have to
+ * keep. Falls back to the bare code where Intl has nothing.
+ */
+export function languageName(code: string | null | undefined): string {
+  if (!code) return 'another language';
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'language' }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
 
 export type TranslateErrorKind = 'quota' | 'network';
 
@@ -62,36 +78,11 @@ export interface WordEntry {
   senses: WordSense[];
 }
 
-/**
- * Letters Kazakh has and Russian does not.
- *
- * Knowing the lyrics are Cyrillic is not enough — it says which alphabet, not
- * which language, and sending a Kazakh song to a Russian translator does not
- * fail, it transliterates. "Күте тұр мені" came back as "Go to the menu",
- * confidently and completely wrong. These nine letters settle it: none of them
- * exists in Russian, and Kazakh can barely write a line without one.
- */
-const KAZAKH_ONLY = /[әғқңөұүһі]/i;
-
-/** The language the lyrics are in, as far as the alphabet can tell. */
-function detectSource(sample: string): Lang {
-  if (KAZAKH_ONLY.test(sample)) return 'kk';
-  return hasCyrillic(sample) ? 'ru' : 'en';
-}
-
-/**
- * Which way round to translate.
- *
- * The feature exists to make English songs readable, so English goes to
- * whichever language was picked. Pointing it at a song already in that
- * language would otherwise translate it into itself, so those go to English
- * instead — and a Kazakh song read in Russian, or the other way round, is a
- * real pair worth keeping rather than a case to fall back from.
- */
-export function pickPair(sample: string, target: TargetLang): { from: Lang; to: Lang } {
-  const from = detectSource(sample);
-  if (from === 'en') return { from, to: target };
-  return { from, to: from === target ? 'en' : target };
+/** A translated song, and what language the translator decided it was in. */
+export interface TranslatedLines {
+  map: ReadonlyMap<string, string>;
+  /** BCP-47-ish code, or null when nothing had to be fetched to find out. */
+  detected: string | null;
 }
 
 /* --------------------------------------------------------------------------
@@ -101,10 +92,14 @@ export function pickPair(sample: string, target: TargetLang): { from: Lang; to: 
  * a song you played yesterday cost nothing today. Every access is wrapped:
  * storage is unavailable in a private window and throws when full, and a
  * translation failing to be remembered must never break the page.
+ *
+ * The key is the TARGET language plus the text — not the source. The source is
+ * a property of the text itself, so including it would only ever split one
+ * entry into two identical ones.
  * ----------------------------------------------------------------------- */
 
-const LINE_STORE = 'livelyrics.translations.v2';
-const WORD_STORE = 'livelyrics.words.v2';
+const LINE_STORE = 'livelyrics.translations.v3';
+const WORD_STORE = 'livelyrics.words.v3';
 /** Enough for a few hundred songs; beyond this the oldest entries are dropped. */
 const MAX_ENTRIES = 1500;
 
@@ -138,7 +133,6 @@ function makeStore<T>(key: string) {
 
   return {
     get: (k: string) => map.get(k),
-    has: (k: string) => map.has(k),
     set: (k: string, v: T) => {
       map.set(k, v);
       if (!timer) timer = setTimeout(flush, 1200);
@@ -152,8 +146,17 @@ let wordCache: ReturnType<typeof makeStore<WordEntry>> | null = null;
 const lines = () => (lineCache ??= makeStore<string>(LINE_STORE));
 const words = () => (wordCache ??= makeStore<WordEntry>(WORD_STORE));
 
-/** Cache key. The pair is part of it: the same line has two translations. */
-const keyFor = (from: Lang, to: Lang, text: string) => `${from}>${to}\u0000${text}`;
+const keyFor = (to: string, text: string) => `${to}\u0000${text}`;
+
+/**
+ * The detected language is cached too, under the song's opening line.
+ *
+ * Without this, the second time you open a song every line comes back from the
+ * cache, nothing is fetched, and the app has no idea what language it is in —
+ * so it could not say which of the two targets is the one this song is already
+ * written in.
+ */
+const detectKey = (sample: string) => `\u0002detect\u0000${sample}`;
 
 /* --------------------------------------------------------------------------
  * Requests
@@ -185,9 +188,9 @@ async function getJson(url: string, signal?: AbortSignal): Promise<unknown> {
 const GTX = 'https://translate.googleapis.com/translate_a/single';
 
 /** `dt=t` asks for the translation; `dt=bd` adds the dictionary for a word. */
-function gtxUrl(text: string, from: Lang, to: Lang, dictionary: boolean): string {
+function gtxUrl(text: string, to: string, dictionary: boolean): string {
   const dt = dictionary ? 'dt=t&dt=bd' : 'dt=t';
-  return `${GTX}?client=gtx&sl=${from}&tl=${to}&${dt}&q=${encodeURIComponent(text)}`;
+  return `${GTX}?client=gtx&sl=auto&tl=${to}&${dt}&q=${encodeURIComponent(text)}`;
 }
 
 /**
@@ -203,6 +206,11 @@ function gtxText(data: unknown): string {
     .trim();
 }
 
+/** `data[2]` is the language it decided the input was in. */
+function gtxDetected(data: unknown): string | null {
+  return Array.isArray(data) && typeof data[2] === 'string' ? data[2] : null;
+}
+
 /** `data[1]` is the dictionary: one entry per part of speech. */
 function gtxSenses(data: unknown): WordSense[] {
   const entries = Array.isArray(data) && Array.isArray(data[1]) ? data[1] : [];
@@ -215,7 +223,7 @@ function gtxSenses(data: unknown): WordSense[] {
       .slice(0, 5);
     if (meanings.length) out.push({ pos, meanings });
   }
-  return out.slice(0, 4);
+  return out.slice(0, 3);
 }
 
 /* ---- provider 2: MyMemory ------------------------------------------------ */
@@ -228,8 +236,8 @@ interface MyMemoryResponse {
   quotaFinished?: boolean;
 }
 
-async function viaMyMemory(text: string, from: Lang, to: Lang, signal?: AbortSignal): Promise<string> {
-  const url = `${MYMEMORY}?q=${encodeURIComponent(text)}&langpair=${from}|${to}`;
+async function viaMyMemory(text: string, to: string, signal?: AbortSignal): Promise<string> {
+  const url = `${MYMEMORY}?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(`Autodetect|${to}`)}`;
   const data = (await getJson(url, signal)) as MyMemoryResponse;
   const out = data.responseData?.translatedText ?? '';
 
@@ -239,6 +247,9 @@ async function viaMyMemory(text: string, from: Lang, to: Lang, signal?: AbortSig
   if (data.quotaFinished || /MYMEMORY WARNING|QUERY LENGTH LIMIT/i.test(out)) {
     throw new TranslateError('The free translation allowance for today is used up.', 'quota');
   }
+  // "PLEASE SELECT TWO DISTINCT LANGUAGES" — it detected the song as already
+  // being in the target language. Nothing to translate, and not an error.
+  if (/DISTINCT LANGUAGES/i.test(out)) return '';
   if (Number(data.responseStatus) !== 200 || !out) {
     throw new TranslateError('The translator had nothing to say for that.', 'network');
   }
@@ -279,12 +290,6 @@ function chunk(texts: string[]): string[][] {
   return out;
 }
 
-async function batchViaGtx(batch: string[], from: Lang, to: Lang, signal?: AbortSignal) {
-  const data = await getJson(gtxUrl(batch.join('\n'), from, to, false), signal);
-  const parts = gtxText(data).split('\n').map((s) => s.trim());
-  return parts.length === batch.length ? parts : null;
-}
-
 /**
  * Translates a set of lines, returning a map from the original text.
  *
@@ -293,22 +298,22 @@ async function batchViaGtx(batch: string[], from: Lang, to: Lang, signal?: Abort
  */
 export async function translateLines(
   texts: string[],
-  from: Lang,
-  to: Lang,
+  to: TargetLang,
   signal?: AbortSignal,
-): Promise<Map<string, string>> {
+): Promise<TranslatedLines> {
   const out = new Map<string, string>();
-  if (from === to) return out;
+  const sample = texts[0] ?? '';
+  let detected = sample ? lines().get(detectKey(sample)) ?? null : null;
 
   const wanted: string[] = [];
   for (const text of texts) {
     const clean = text.trim();
     if (!clean || out.has(clean) || wanted.includes(clean)) continue;
-    const cached = lines().get(keyFor(from, to, clean));
+    const cached = lines().get(keyFor(to, clean));
     if (cached !== undefined) out.set(clean, cached);
     else wanted.push(clean);
   }
-  if (wanted.length === 0) return out;
+  if (wanted.length === 0) return { map: out, detected };
 
   const remember = (source: string, translated: string) => {
     // A translator that hands back the input unchanged has told us nothing;
@@ -316,8 +321,14 @@ export async function translateLines(
     const value = translated && translated !== source ? translated : '';
     if (value) {
       out.set(source, value);
-      lines().set(keyFor(from, to, source), value);
+      lines().set(keyFor(to, source), value);
     }
+  };
+
+  const noteDetected = (code: string | null) => {
+    if (!code || detected) return;
+    detected = code;
+    if (sample) lines().set(detectKey(sample), code);
   };
 
   let quota: TranslateError | null = null;
@@ -325,8 +336,10 @@ export async function translateLines(
   for (const batch of chunk(wanted)) {
     let done = false;
     try {
-      const parts = await batchViaGtx(batch, from, to, signal);
-      if (parts) {
+      const data = await getJson(gtxUrl(batch.join('\n'), to, false), signal);
+      noteDetected(gtxDetected(data));
+      const parts = gtxText(data).split('\n').map((s) => s.trim());
+      if (parts.length === batch.length) {
         batch.forEach((source, i) => remember(source, parts[i]));
         done = true;
       }
@@ -339,12 +352,13 @@ export async function translateLines(
     if (done) continue;
     for (const source of batch) {
       try {
-        const data = await getJson(gtxUrl(source, from, to, false), signal);
+        const data = await getJson(gtxUrl(source, to, false), signal);
+        noteDetected(gtxDetected(data));
         remember(source, gtxText(data));
       } catch (first) {
         if (first instanceof DOMException) throw first;
         try {
-          remember(source, await viaMyMemory(source, from, to, signal));
+          remember(source, await viaMyMemory(source, to, signal));
         } catch (second) {
           if (second instanceof DOMException) throw second;
           if (second instanceof TranslateError && second.kind === 'quota') {
@@ -358,11 +372,14 @@ export async function translateLines(
     if (quota) break;
   }
 
-  // Only a complete failure is worth reporting. A batch that produced some
-  // lines is more useful on screen than an error instead of all of them.
-  if (out.size === 0 && quota) throw quota;
-  if (out.size === 0) throw new TranslateError('Could not reach the translator.', 'network');
-  return out;
+  // A song already in the target language legitimately produces nothing: every
+  // line came back unchanged and was dropped. That is a result, not a failure,
+  // and `detected` is what lets the caller say so.
+  if (out.size === 0 && detected !== to) {
+    if (quota) throw quota;
+    throw new TranslateError('Could not reach the translator.', 'network');
+  }
+  return { map: out, detected };
 }
 
 /* --------------------------------------------------------------------------
@@ -383,20 +400,19 @@ export function cleanWord(raw: string): string {
 /** One word, with as much of a dictionary entry as the provider will give. */
 export async function lookupWord(
   raw: string,
-  from: Lang,
-  to: Lang,
+  to: TargetLang,
   signal?: AbortSignal,
 ): Promise<WordEntry> {
   const word = cleanWord(raw);
   if (!word) throw new TranslateError('There is no word there to look up.', 'network');
 
-  const key = keyFor(from, to, `\u0001${word.toLowerCase()}`);
+  const key = keyFor(to, `\u0001${word.toLowerCase()}`);
   const cached = words().get(key);
   if (cached) return cached;
 
   let entry: WordEntry | null = null;
   try {
-    const data = await getJson(gtxUrl(word, from, to, true), signal);
+    const data = await getJson(gtxUrl(word, to, true), signal);
     const primary = gtxText(data);
     if (primary) entry = { word, primary, senses: gtxSenses(data) };
   } catch (err) {
@@ -405,7 +421,9 @@ export async function lookupWord(
 
   if (!entry) {
     // No dictionary from this one, but a translation is most of the value.
-    entry = { word, primary: await viaMyMemory(word, from, to, signal), senses: [] };
+    const primary = await viaMyMemory(word, to, signal);
+    if (!primary) throw new TranslateError('That word is already in this language.', 'network');
+    entry = { word, primary, senses: [] };
   }
 
   words().set(key, entry);

@@ -1,0 +1,183 @@
+/* ============================================================================
+   The three control groups. One visual language, three places on screen.
+   ========================================================================== */
+
+/* --- Shared pill ----------------------------------------------------------
+   Every control here is the same pill: a glyph, an optional label, a 42px
+   target underneath whatever it looks like. */
+
+.session__btn,
+.tools__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  justify-content: center;
+  min-inline-size: 2.625rem;
+  min-block-size: 2.625rem;
+  padding-inline: var(--s-3);
+  border-radius: var(--r-pill);
+  color: var(--c-fg-mute);
+  background: rgb(255 255 255 / 0.06);
+  border: 1px solid var(--c-line);
+  transition:
+    color      var(--d-fast) var(--e-out),
+    background var(--d-fast) var(--e-out),
+    transform  var(--d-fast) var(--e-spring),
+    opacity    var(--d-fast) var(--e-out);
+}
+
+.session__btn:hover:not(:disabled),
+.tools__btn:hover { color: var(--c-fg); background: rgb(255 255 255 / 0.12); }
+
+.session__btn:active:not(:disabled),
+.tools__btn:active { transform: scale(0.94); }
+
+.session__btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.session__label,
+.tools__label {
+  font-family: var(--f-mono);
+  font-size: var(--t-label);
+  font-weight: 600;
+  letter-spacing: var(--tr-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/*
+ * A tool that is currently doing something stays lit for as long as it is —
+ * but lit as an outline, not as a fill.
+ *
+ * Filled, they competed with the play button beside them: with the timeline
+ * open and the translation on, the bar was four solid accent shapes in a row
+ * and none of them looked more important than the others. One filled control
+ * per bar, and it is the one you press most.
+ */
+.tools__btn[data-active] {
+  color: var(--c-accent);
+  background: var(--c-accent-veil);
+  border-color: var(--c-accent);
+}
+.tools__btn[data-active]:hover { color: var(--c-accent-hi); background: rgb(255 142 122 / 0.18); }
+
+/* --- Top bar: session ----------------------------------------------------- */
+
+.session {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: 0 0 auto;
+}
+
+.session__btn {
+  /* Quieter than the bottom bar: these end things, and nothing about ending
+     something should catch the eye while a song is playing. */
+  min-block-size: 2.125rem;
+  min-inline-size: 2.125rem;
+  background: none;
+  border-color: transparent;
+}
+
+.session__btn:hover:not(:disabled) { background: rgb(255 255 255 / 0.1); }
+.session__btn--quiet { color: var(--c-fg-soft); }
+
+/* --- Bottom, centre: play ------------------------------------------------- */
+
+.playctl {
+  display: grid;
+  place-items: center;
+  inline-size: 3rem;
+  block-size: 3rem;
+  border-radius: var(--r-pill);
+  color: var(--c-accent-ink);
+  background: var(--c-accent);
+  box-shadow: 0 0 0 0 var(--c-accent-glow);
+  transition:
+    background var(--d-fast) var(--e-out),
+    box-shadow var(--d-base) var(--e-out),
+    transform  var(--d-fast) var(--e-spring);
+}
+
+.playctl:hover  { background: var(--c-accent-hi); box-shadow: 0 0 26px -2px var(--c-accent-glow); }
+.playctl:active { transform: scale(0.93); }
+
+/* Paused is a state, not a moment. The filled button becomes an outline, so
+   "stopped" reads as an absence rather than as a different colour. */
+.playctl[data-paused] {
+  color: var(--c-accent);
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--c-accent);
+}
+.playctl[data-paused]:hover { color: var(--c-accent-ink); background: var(--c-accent); }
+
+/* --- Bottom, end: reading tools ------------------------------------------- */
+
+.tools {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: 0 0 auto;
+}
+
+/* --- Language segment -----------------------------------------------------
+   Two named options with one of them always visibly chosen, rather than one
+   button you press repeatedly to find out what it does. */
+
+.seg {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  gap: 2px;
+  border-radius: var(--r-pill);
+  background: rgb(255 255 255 / 0.07);
+  border: 1px solid var(--c-line);
+}
+
+.seg__opt {
+  min-inline-size: 2.25rem;
+  min-block-size: 2.125rem;
+  padding-inline: var(--s-2);
+  border-radius: var(--r-pill);
+  font-family: var(--f-mono);
+  font-size: var(--t-label);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--c-fg-soft);
+  transition:
+    color      var(--d-fast) var(--e-out),
+    background var(--d-fast) var(--e-out);
+}
+
+.seg__opt:hover:not(:disabled):not([data-on]) { color: var(--c-fg); background: rgb(255 255 255 / 0.1); }
+
+.seg__opt[data-on] {
+  color: var(--c-accent-ink);
+  background: var(--c-accent);
+}
+
+/* The song's own language. Dimmed rather than removed, so the pair stays a
+   pair and the reason is in the tooltip rather than in a gap. */
+.seg__opt:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+
+/* --- Responsive -----------------------------------------------------------
+   Labels go before targets do. Every button keeps its 42px box at every
+   width; only the words beside the glyphs are given up. */
+
+@media (max-width: 860px) {
+  .session__label { display: none; }
+  .session__btn { padding-inline: 0; }
+}
+
+@media (max-width: 620px) {
+  .tools__label { display: none; }
+  .tools__btn { padding-inline: 0; }
+}
+
+@media (max-width: 380px) {
+  .tools { gap: var(--s-1); }
+  .seg__opt { min-inline-size: 2rem; padding-inline: var(--s-1); }
+}

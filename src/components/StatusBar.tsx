@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { AppPhase } from '../types';
 import './StatusBar.css';
 
@@ -24,9 +25,13 @@ interface Props {
   /** Overrides the phase's own wording — e.g. a pause the listener asked for,
    *  rather than one we guessed at from the room going quiet. */
   label?: string;
+  /** Session-level actions: starting over, and finishing. They live up here
+   *  because they end things, and nothing that ends things belongs in the
+   *  row of controls you use while a song is playing. */
+  actions?: ReactNode;
 }
 
-export function StatusBar({ phase, readouts = [], level = 0, label }: Props) {
+export function StatusBar({ phase, readouts = [], level = 0, label, actions }: Props) {
   const recording = phase === 'listening';
 
   return (
@@ -68,6 +73,8 @@ export function StatusBar({ phase, readouts = [], level = 0, label }: Props) {
         {readouts.map((r) => (
           <span key={r} className="label readout statusbar__readout">{r}</span>
         ))}
+
+        {actions}
       </div>
 
       {/* Only rendered while the mic is genuinely open. An activity line that

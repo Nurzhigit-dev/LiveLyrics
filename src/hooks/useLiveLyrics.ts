@@ -134,8 +134,10 @@ export function useLiveLyrics() {
   const [activity, setActivity] = useState<string | null>(null);
   /** Who stopped the clock: the listener, or the room going quiet. */
   const [pausedBy, setPausedBy] = useState<'user' | 'silence' | null>(null);
-  /** True while the listener is scrolling the lyrics to choose a line. */
-  const [picking, setPicking] = useState(false);
+  /** True while the timeline is open. */
+  const [adjusting, setAdjusting] = useState(false);
+  /** Where the timeline is being dragged to, or null when nobody is dragging. */
+  const [scrub, setScrub] = useState<number | null>(null);
 
   const live = useRef({
     phase: 'idle' as AppPhase,
@@ -145,7 +147,8 @@ export function useLiveLyrics() {
     anchor: null as Anchor | null,
     hold: null as number | null,
     pausedBy: null as 'user' | 'silence' | null,
-    picking: false,
+    adjusting: false,
+    scrub: null as number | null,
     calibration,
   });
 
@@ -156,7 +159,9 @@ export function useLiveLyrics() {
   const bgRef = useRef<AbortController | null>(null);
   const releaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const clock = useSongClock(anchor, calibration, hold);
+  // A drag outranks a pause: while the timeline is being moved the clock shows
+  // the dragged position, whatever else is holding it still.
+  const clock = useSongClock(anchor, calibration, scrub ?? hold);
   const spans = useMemo(() => computeSungSpans(lines), [lines]);
   const activeIndex = useMemo(
     () => (synced ? findActiveIndex(lines, clock.position + LINE_LEAD) : -1),
@@ -179,7 +184,8 @@ export function useLiveLyrics() {
       anchor: (v: Anchor | null) => { live.current.anchor = v; setAnchor(v); },
       hold: (v: number | null) => { live.current.hold = v; setHold(v); },
       pausedBy: (v: 'user' | 'silence' | null) => { live.current.pausedBy = v; setPausedBy(v); },
-      picking: (v: boolean) => { live.current.picking = v; setPicking(v); },
+      adjusting: (v: boolean) => { live.current.adjusting = v; setAdjusting(v); },
+      scrub: (v: number | null) => { live.current.scrub = v; setScrub(v); },
     };
 
     /** The song position at wall-clock time `ts`, without the calibration. */
@@ -647,31 +653,61 @@ export function useLiveLyrics() {
       saveCalibration(next);
     };
 
-    /** Opens the free-scrolling view for choosing the line that is playing. */
-    const startPicking = () => {
-      if (live.current.phase !== 'synced' && live.current.phase !== 'paused') return;
+    /**
+     * Moves the clock to `at` seconds, the way choosing a line or letting go
+     * of the timeline does.
+     *
+     * Paused: the held position moves and the pause stands, so the lyrics are
+     * waiting at the right place when the music starts again. Otherwise the
+     * anchor is re-set to now. The calibration is subtracted because the clock
+     * adds it back — without that, a hand correction would have the saved
+     * correction applied to it a second time.
+     */
+    const placeAt = (at: number) => {
+      // A hand correction outranks an automatic one still in flight.
       bgRef.current?.abort();
-      set.picking(true);
+      if (live.current.phase === 'paused') {
+        set.hold(at);
+        return;
+      }
+      // oxlint-disable-next-line react/purity
+      set.anchor({ startedAt: performance.now(), songPosition: at - live.current.calibration });
     };
 
-    const stopPicking = () => set.picking(false);
+    /**
+     * The timeline.
+     *
+     * While a drag is in progress the clock is frozen at the dragged position
+     * — that is what makes the lyrics behind the timeline follow it, so you
+     * scrub until the line on screen is the one you can hear rather than
+     * reading a timecode and guessing. Letting go takes that instant as the
+     * reference and the song runs on from there.
+     */
+    const startAdjust = () => {
+      if (live.current.phase !== 'synced' && live.current.phase !== 'paused') return;
+      bgRef.current?.abort();
+      set.adjusting(true);
+    };
+
+    const endAdjust = () => {
+      set.scrub(null);
+      set.adjusting(false);
+    };
+
+    const scrubTo = (at: number) => set.scrub(Math.max(0, at));
+
+    const commitScrub = () => {
+      const at = live.current.scrub;
+      set.scrub(null);
+      if (at === null) return;
+      placeAt(at);
+    };
 
     /** Choosing a lyric line says "the song is here, right now". */
     const seekToLine = (index: number) => {
       const line = live.current.lines[index];
       if (!line) return;
-      set.picking(false);
-      // A hand correction outranks an automatic one still in flight.
-      bgRef.current?.abort();
-      // Paused: move the held position and stay paused, so the lyrics are
-      // ready at the right line when the music starts again.
-      if (live.current.phase === 'paused') {
-        set.hold(line.time);
-        return;
-      }
-      // Subtracting the calibration means the clicked line lands exactly on
-      // "now", instead of having the saved correction applied a second time.
-      set.anchor({ startedAt: performance.now(), songPosition: line.time - live.current.calibration });
+      placeAt(line.time);
     };
 
     /**
@@ -708,8 +744,8 @@ export function useLiveLyrics() {
     };
 
     return {
-      listen, stop, reset, nudge, seekToLine,
-      togglePause, startPicking, stopPicking,
+      listen, stop, reset, nudge, seekToLine, togglePause,
+      startAdjust, endAdjust, scrubTo, commitScrub,
       listenForNext, demo, dispose,
     };
   }, []);
@@ -726,12 +762,16 @@ export function useLiveLyrics() {
   useEffect(() => engine.dispose, [engine]);
 
   // When the song runs past its end, listen for whatever comes next.
+  // Not while the timeline is being dragged: scrubbing to the end of a track
+  // would otherwise look exactly like the track finishing, and spend a
+  // recognition from the month's quota on a song that is still playing.
   useEffect(() => {
     if (phase !== 'synced' || !synced || !track?.duration || !micRef.current) return;
+    if (adjusting || scrub !== null) return;
     if (clock.position < track.duration + SONG_END_GRACE) return;
     if (bgRef.current) return;
     void engine.listenForNext();
-  }, [phase, synced, track, clock.position, engine]);
+  }, [phase, synced, track, clock.position, adjusting, scrub, engine]);
 
   const busy = phase === 'listening' || phase === 'identifying' || phase === 'fetching';
 
@@ -752,7 +792,9 @@ export function useLiveLyrics() {
     busy,
     paused: phase === 'paused',
     pausedBy,
-    picking,
+    adjusting,
+    /** Where the timeline is being dragged to, or null when nobody is. */
+    scrub,
     showLyrics: (phase === 'synced' || phase === 'paused') && lines.length > 0,
     listen: engine.listen,
     stop: engine.stop,
@@ -760,7 +802,9 @@ export function useLiveLyrics() {
     nudge: engine.nudge,
     seekToLine: engine.seekToLine,
     togglePause: engine.togglePause,
-    startPicking: engine.startPicking,
-    stopPicking: engine.stopPicking,
+    startAdjust: engine.startAdjust,
+    endAdjust: engine.endAdjust,
+    scrubTo: engine.scrubTo,
+    commitScrub: engine.commitScrub,
   };
 }

@@ -53,8 +53,8 @@ After that it keeps listening, quietly:
 ## Features
 
 - **Pause and resume**, by button or the space bar, holding the lyrics exactly where they were
-- **Find line**: scroll the lyrics freely, tap the line that's playing, and it carries on from there — with the timestamps beside each line, the line the clock believes in marked `now`, and a preview of how far the sync is about to move
-- **Read along in Russian or Kazakh**, and tap any word for what it means — see [Studying English with it](#studying-english-with-it)
+- **Adjust**: a timeline you drag until the words on screen are the ones you can hear — the lyrics follow the drag as you make it, so there is nothing to read off and nothing to work out
+- **Read along in Russian or English**, whatever the song is sung in, and tap any word for what it means — see [Studying English with it](#studying-english-with-it)
 - **Word-by-word highlighting**, paced to each song's own tempo rather than smeared across instrumental breaks
 - **Russian and Kazakh songs** match even when the recogniser and the lyric database spell the names in different scripts: `Zemfira` finds `Земфира`
 - **Stop detection**, with an automatic re-sync on resume
@@ -67,14 +67,13 @@ After that it keeps listening, quietly:
 
 ## Studying English with it
 
-Press **Translate** in the bar. It cycles: off → **RU** → **KK** → off.
+Press **Translate** in the bar, and pick **RU** or **EN** beside it.
 
 With it on, two things change.
 
 **Every line gets its meaning underneath it.** Not just the line being sung —
-the whole song is translated at once, so you can read ahead, and the line
-picker shows the translations too, which turns out to be the easiest way to
-find your place in a song you don't fully understand.
+the whole song is translated at once, so you can read ahead rather than
+waiting for each line to arrive.
 
 **Every word becomes tappable.** Tap one and a card opens under the lyrics
 with:
@@ -91,13 +90,18 @@ for **hide**, not "simple past of hide". Tapping a word is a lookup, not a
 seek, so while you're reading, **Play from here** on the card does what
 tapping a line does when translation is off.
 
-**Which way it translates is decided by the song, not the setting.** English
-lyrics go into the language you picked. A Russian song with **RU** selected
-goes to English instead, because translating it into the language it is
-already in would tell you nothing. A Kazakh song with **RU** selected goes to
-Russian. The Kazakh letters — `ә ғ қ ң ө ұ ү һ і` — are what tells Kazakh and
-Russian apart; without that check, a Kazakh line sent to a Russian translator
-doesn't fail, it quietly comes back as nonsense.
+### It doesn't care what the song is in
+
+You choose the language you're reading *in* — Russian or English. The song's
+own language is never assumed: it is detected, every time, by the translator
+itself. So a French track, or Spanish, or Kazakh, reads exactly as well as an
+English one. There is no list of supported languages to fall off the end of.
+
+The one case that needs a decision is a song already in the language you
+picked, and it makes it for you: a Russian song with **RU** selected is shown
+in English instead, because translating it into the language it is already
+written in would tell you nothing. The button for that language then greys
+out, and says why.
 
 Everything translated is remembered in your browser, so a chorus costs one
 translation however many times it comes round, and a song you play again
@@ -196,14 +200,19 @@ src/
     useLiveLyrics.ts the listening, recognition and sync engine
     useSongClock.ts  turns a match position into a live playback position
     useStudy.ts      the second language, and the word card
-  components/        the interface
+  components/
+    LyricStage.tsx   the reel, the word-by-word highlight, the translations
+    SyncBar.tsx      the timeline, and the fine timing stepper
+    Controls.tsx     the three control groups, and where each one lives
+    WordCard.tsx     one word: meaning, senses, definition, context
+    …                the rest of the interface
   styles/            design tokens and base styles
 ```
 
 ### Working on the lyric view without music
 
 Everything on screen after a match — the reel, the word-by-word highlight, the
-line picker, the translations — needs a song playing in the room to appear at
+timeline, the translations — needs a song playing in the room to appear at
 all, which makes it awkward to work on.
 
 So `npm run dev` accepts `?demo`:
@@ -212,7 +221,7 @@ So `npm run dev` accepts `?demo`:
 | --- | --- |
 | `localhost:5173/?demo` | an English song |
 | `localhost:5173/?demo=ru` | a Russian one |
-| `localhost:5173/?demo=kk` | a Kazakh one |
+| `localhost:5173/?demo=kk` | a Kazakh one — the case where neither reading language is the song's own |
 
 Each drops straight into the synced view, mid-verse, with no microphone and no
 recognition spent. The words are invented — no real lyrics live in this
@@ -249,7 +258,11 @@ repository, not even as test data — and the whole thing is behind
 
 **The lyric reel moves by `transform`, and nothing blurs the text.** Transforms are animated by the compositor, off the main thread. Animating a `filter` on text would re-rasterise every glyph on every frame, so all the softness lives in the background instead.
 
-**The edge fades hang off a frame, not off the scroller.** They used to be children of the scrolling element, and an absolutely positioned child of a scroll container is placed against its *unscrolled* box — so both fades travelled with the content. Nothing showed while following, because nothing scrolls there. But in the line picker, which really does scroll, the bottom fade's hard lower edge was dragged into the middle of the screen: a black band lying across the lyrics that looked like a rendering fault. The scrolling now happens one element in, and the fades are positioned against an outer frame that cannot scroll.
+**The edge fades hang off a frame, not off the scroller.** They used to be children of the scrolling element, and an absolutely positioned child of a scroll container is placed against its *unscrolled* box — so both fades travelled with the content. Nothing showed while following, because nothing scrolls there. But in anything that really scrolled, the bottom fade's hard lower edge was dragged into the middle of the screen: a black band lying across the lyrics that looked like a rendering fault. The scrolling now happens one element in, and the fades are positioned against an outer frame that cannot scroll.
+
+**Fixing the sync is a drag, not a choice from a list.** The first version of this was a scrollable list of every line with its timestamp, and you tapped the one you could hear. It was precise and it was hard work: you had to read a list of lines you didn't recognise, find the words, and commit — and being out by a verse meant scrolling, hunting and trying again. The timeline is the ordinary gesture for "the song is further along than you think", and the trick that makes it work is that the clock is *held* at the dragged position, so the lyrics behind the panel move with your thumb. You never read a timecode. You drag until the line on screen is the line in the room, and let go.
+
+**The controls are in three places, by what they are for.** They were one row of six in the bottom-right corner, which meant reading all six every time you wanted one, and nothing said which of them would end the session. Now: starting over and finishing live in the top bar, out of the way; the one control you reach for while listening — pause — sits alone in the middle of the bottom bar where it can be hit without looking; and the two that change how the lyrics read are at the end. The fine timing stepper left the bar altogether and lives inside the timeline, next to the coarse correction it belongs with. Only one control in the bar is filled with the accent colour, and it is the play button: when the tools were filled too, four solid shapes sat in a row and none of them looked more important than the others.
 
 **Cyrillic has its own typeface, chosen by the browser one character at a time.** Archivo — which carries the whole design — ships no Cyrillic at all, so every Russian and Kazakh lyric was quietly falling through to Arial: a different skeleton, a different weight, none of the variable axes, and the Kazakh letters at the mercy of whatever the device happened to have installed. Golos Text, a ParaType face drawn for Russian and covering Kazakh, now sits *behind* Archivo in the stack rather than replacing it. Font fallback is resolved per character, so the Cyrillic lands in Golos while the Latin stays in Archivo, with no class to toggle and no language to detect — which is also exactly what a translated line needs, with both scripts on screen at once. Google serves each family split by script, so a page of English lyrics never downloads the Cyrillic and a page of Kazakh ones never downloads the Latin.
 
@@ -266,10 +279,10 @@ Worth being honest about what this can and can't do:
 - It needs a reasonably clear signal. A loud room, a distant speaker, or people talking over the top will all defeat the fingerprint. **Proximity matters far more than volume.**
 - It only matches what's in ACRCloud's catalogue. Live takes, remixes and very local releases often aren't there, and that includes a lot of Kazakh music.
 - Lyrics depend on LRCLIB having an entry. When a song is recognised but has no lyrics, the app names the song and says so, rather than pretending it didn't hear it.
-- Ambient sync is never sample-accurate. That's why the self-check, the timing correction and **Find line** exist.
+- Ambient sync is never sample-accurate. That's why the self-check, the timing correction and **Adjust** exist.
 - Whether a song is recognised at all is ACRCloud's catalogue, not something this code can fix. What it can do — and does — is refuse to show a match it isn't sure of.
 - The free tier is capped per month and shared by all visitors.
-- **The translations are machine translations of song lyrics**, which is close to the hardest thing you can hand a translator: metaphor, ellipsis, deliberate ambiguity, and lines that only mean anything next to the one before. Expect the sense, not the poetry. Kazakh is noticeably weaker than Russian in both directions, because there is far less of it for the translators to have learned from.
+- **The translations are machine translations of song lyrics**, which is close to the hardest thing you can hand a translator: metaphor, ellipsis, deliberate ambiguity, and lines that only mean anything next to the one before. Expect the sense, not the poetry. Quality also varies a lot by source language — a Kazakh or Georgian track will read more roughly than a French or Spanish one, simply because there is less of it for the translators to have learned from.
 - The better of the two translators is an **undocumented endpoint**. It is the one with the dictionary — parts of speech, several senses per word — and it has no practical daily limit, but nobody promised it would keep working. If it stops, the app falls back to MyMemory, which is documented and free but knows nothing about parts of speech and allows roughly 5,000 characters a day per address. The lyrics themselves are unaffected either way: a failed translation is one quiet line above the transport bar, and the song keeps scrolling underneath it.
 
 ---

@@ -1,6 +1,5 @@
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { LyricLine } from '../types';
-import { formatTime } from '../lib/time';
 import './LyricStage.css';
 
 interface Props {
@@ -11,8 +10,6 @@ interface Props {
   activeIndex: number;
   /** False when only unsynced plain lyrics were available. */
   synced: boolean;
-  /** True while the listener is scrolling freely to choose a line. */
-  picking?: boolean;
   /** Reads the exact song position without triggering a render. */
   getPosition: () => number;
   /** Called when a line is clicked, to re-anchor the clock to that moment. */
@@ -34,21 +31,8 @@ const FOCAL_RATIO = 0.40;
 /** Past this many lines away, everything looks the same. */
 const MAX_DISTANCE = 5;
 
-
 /** Assumed length of the final line, which has no following timestamp. */
 const LAST_LINE_SECONDS = 4;
-
-/** How often the picker re-reads the clock, to keep the shift preview true. */
-const PICK_TICK_MS = 250;
-
-/** A shift smaller than this isn't worth previewing as a correction. */
-const SHIFT_FLOOR = 0.1;
-
-/** "+3.2s" / "−1.4s": how far the sync moves if this line is chosen. */
-function formatShift(seconds: number): string {
-  const sign = seconds < 0 ? '−' : '+';
-  return `${sign}${Math.abs(seconds).toFixed(1)}s`;
-}
 
 /* ---------------------------------------------------------------------------
  * One line.
@@ -72,29 +56,20 @@ interface RowProps {
   isActive: boolean;
   isPast: boolean;
   seekable: boolean;
-  /** Show the line's timestamp — used while choosing a line. */
-  showTime?: boolean;
   /** The line in the reader's own language, when there is one. */
   translation?: string;
   /** Which language that is, so assistive tech reads it correctly. */
   translationLang?: string;
   /** Words are individually tappable. */
   studyOn?: boolean;
-  /** Picker only: the line the clock believes is playing right now. */
-  isNow?: boolean;
-  /** Picker only: the line under the pointer or the keyboard cursor. */
-  isCursor?: boolean;
-  /** Picker only: how far the sync would move, shown on the cursor row. */
-  shift?: number;
   onSeek?: (index: number) => void;
   onWord?: (word: string, line: string, index: number) => void;
-  onCursor?: (index: number) => void;
   attach: (index: number, el: HTMLElement | null) => void;
 }
 
 const LyricRow = memo(function LyricRow({
-  line, index, distance, isActive, isPast, seekable, showTime, translation, translationLang,
-  studyOn, isNow, isCursor, shift, onSeek, onWord, onCursor, attach,
+  line, index, distance, isActive, isPast, seekable, translation, translationLang,
+  studyOn, onSeek, onWord, attach,
 }: RowProps) {
   const ref = useCallback(
     (el: HTMLElement | null) => attach(index, el),
@@ -117,9 +92,6 @@ const LyricRow = memo(function LyricRow({
     'data-active': isActive || undefined,
     'data-past': isPast || undefined,
     'data-words': words.length,
-    'data-timed': showTime || undefined,
-    'data-now': isNow || undefined,
-    'data-cursor': isCursor || undefined,
     'aria-current': isActive ? ('true' as const) : undefined,
   };
 
@@ -130,36 +102,10 @@ const LyricRow = memo(function LyricRow({
     <span className="lyrics__translation" lang={translationLang}>{translation}</span>
   ) : null;
 
-  // While choosing a line, every line is laid out the same way — timestamp
-  // beside text — so the list reads as something to scan rather than follow.
-  if (showTime) {
-    return (
-      <button
-        type="button"
-        className="lyrics__line lyrics__line--seek"
-        onClick={() => onSeek?.(index)}
-        onPointerEnter={() => onCursor?.(index)}
-        onFocus={() => onCursor?.(index)}
-        title="Play the lyrics from this line"
-        {...shared}
-      >
-        <span className="lyrics__time readout">{formatTime(line.time)}</span>
-        <span className="lyrics__body">
-          <span className="lyrics__text">{line.text}</span>
-          {under}
-        </span>
-        <span className="lyrics__tag" aria-hidden="true">
-          {isNow ? 'now' : isCursor && shift !== undefined && Math.abs(shift) >= SHIFT_FLOOR
-            ? formatShift(shift)
-            : ''}
-        </span>
-      </button>
-    );
-  }
-
   // Studying: each word is its own target, so one can be looked up. The line
   // can't also be a button — a button inside a button isn't valid, and it
-  // would swallow the tap. Choosing a line keeps its own view, one press away.
+  // would swallow the tap. Moving the clock keeps the timeline, and the word
+  // card offers the same line as a starting point.
   if (studyOn) {
     return (
       <p className="lyrics__line lyrics__line--study" {...shared}>
@@ -206,7 +152,7 @@ const LyricRow = memo(function LyricRow({
       type="button"
       className="lyrics__line lyrics__line--seek"
       onClick={() => onSeek(index)}
-      title="Set the sync to this line"
+      title="Play the song from this line"
       {...shared}
     >
       {content}
@@ -220,7 +166,7 @@ const LyricRow = memo(function LyricRow({
 /* ------------------------------------------------------------------------ */
 
 function LyricStageInner({
-  lines, spans, activeIndex, synced, picking = false, getPosition, onSeekToLine,
+  lines, spans, activeIndex, synced, getPosition, onSeekToLine,
   translate, translationLang, studyOn = false, onWord,
 }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -229,17 +175,11 @@ function LyricStageInner({
 
   /** How far the reel is shifted, in pixels. Negative moves it upward. */
   const [shift, setShift] = useState(0);
-  /** Picker only: the line under the pointer or the keyboard cursor. */
-  const [cursor, setCursor] = useState(-1);
-  /** Picker only: the clock, re-read a few times a second for the preview. */
-  const [now, setNow] = useState(0);
 
   // Stable identity, so memoised rows are not invalidated on every render.
   const attach = useCallback((index: number, el: HTMLElement | null) => {
     lineRefs.current[index] = el;
   }, []);
-
-  const moveCursor = useCallback((index: number) => setCursor(index), []);
 
   /**
    * Positions the reel so the active line sits on the focal point.
@@ -259,16 +199,14 @@ function LyricStageInner({
    * error would compound with every interruption.
    */
   const align = useCallback(() => {
-    // While picking, the reel is an ordinary scrollable list and the listener
-    // drives it. Moving it under them would be exactly wrong.
-    if (!synced || picking) return;
+    if (!synced) return;
     const viewport = viewportRef.current;
     const el = lineRefs.current[Math.max(0, activeIndex)];
     if (!viewport || !el) return;
 
     const focal = viewport.clientHeight * FOCAL_RATIO;
     setShift(focal - (el.offsetTop + el.offsetHeight / 2));
-  }, [activeIndex, synced, picking]);
+  }, [activeIndex, synced]);
 
   // useLayoutEffect so the reel is never painted at the old position first.
   useLayoutEffect(align, [align]);
@@ -279,10 +217,10 @@ function LyricStageInner({
    * A window resize is only one of the ways that happens, and it stopped being
    * the common one: the webfont finishing its swap changes every line's
    * height, translations arriving add a second line of text to every row, and
-   * the word card opening takes a slice off the bottom of the viewport without
-   * the window changing size at all. A ResizeObserver on the viewport catches
-   * all of those, because every one of them ends in this box being a different
-   * size or the reel inside it being a different height.
+   * the word card or the timeline opening takes a slice off the bottom of the
+   * viewport without the window changing size at all. A ResizeObserver on the
+   * viewport catches all of those, because every one of them ends in this box
+   * being a different size or the reel inside it being a different height.
    */
   useEffect(() => {
     if (!synced) return;
@@ -304,109 +242,6 @@ function LyricStageInner({
   }, [align, synced]);
 
   /**
-   * Scrolls a line to the middle of the picker.
-   *
-   * Used on the way in and by the keyboard, and deliberately instant rather
-   * than smooth: opening the picker on a long song would otherwise be a
-   * second-long slide from the top of the track past everything in between.
-   */
-  const revealInPicker = useCallback((index: number, behavior: ScrollBehavior = 'auto') => {
-    const viewport = viewportRef.current;
-    const el = lineRefs.current[Math.max(0, index)];
-    if (!viewport || !el) return;
-    // `behavior: 'smooth'` is not covered by the reduced-motion media query the
-    // rest of the app answers to — that only governs CSS — so it is checked
-    // here as well, or arrow keys would glide for someone who asked for stillness.
-    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    viewport.scrollTo({
-      top: el.offsetTop + el.offsetHeight / 2 - viewport.clientHeight / 2,
-      behavior: still ? 'auto' : behavior,
-    });
-  }, []);
-
-  /**
-   * Entering and leaving the free-scrolling view.
-   *
-   * On entry the list is scrolled so the line the clock believes is playing
-   * sits in the middle, which is the obvious place to start looking from, and
-   * the cursor starts there too so the keyboard has somewhere to move from. On
-   * exit the scroll is returned to zero, because the following view positions
-   * itself with a transform and any leftover scroll would offset it.
-   */
-  useLayoutEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    if (!picking) {
-      viewport.scrollTop = 0;
-      setCursor(-1);
-      return;
-    }
-    setCursor(activeIndex);
-    revealInPicker(activeIndex);
-    // Focus the list itself so the arrow keys work without tabbing into it.
-    viewport.focus({ preventScroll: true });
-    // Only on entry: re-centring on every tick would fight the listener.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [picking, revealInPicker]);
-
-  /**
-   * The shift preview needs the live clock, but the picker is otherwise
-   * static, so it is sampled four times a second rather than every frame —
-   * enough for a number shown to one decimal place, and nothing at all when
-   * the picker is closed.
-   */
-  useEffect(() => {
-    if (!picking) return;
-    const read = () => setNow(getPosition());
-    read();
-    const timer = setInterval(read, PICK_TICK_MS);
-    return () => clearInterval(timer);
-  }, [picking, getPosition]);
-
-  /** Indices that can actually be chosen — instrumental gaps have no words. */
-  const pickable = useMemo(
-    () => lines.flatMap((line, i) => (line.text ? [i] : [])),
-    [lines],
-  );
-
-  /**
-   * Arrow keys walk the list while picking.
-   *
-   * Without this the only way to reach a line from the keyboard was to Tab
-   * through every line above it, which on a long song is dozens of presses —
-   * so in practice the picker was mouse-only. Enter chooses the line the
-   * cursor is on. Escape is handled at the window level, with everything else
-   * that closes.
-   */
-  const onKeyDown = useCallback((event: React.KeyboardEvent) => {
-    if (!picking || pickable.length === 0) return;
-
-    const at = pickable.indexOf(cursor);
-    let next: number | null = null;
-
-    if (event.key === 'ArrowDown') next = pickable[Math.min(pickable.length - 1, at + 1)];
-    else if (event.key === 'ArrowUp') next = pickable[Math.max(0, at - 1)];
-    else if (event.key === 'Home') next = pickable[0];
-    else if (event.key === 'End') next = pickable[pickable.length - 1];
-    else if (event.key === 'Enter') {
-      // Only when the list itself has focus: a row button handles its own
-      // Enter, and acting here as well would fire the seek twice.
-      // Space is deliberately left alone — it pages a focused scroll container,
-      // which is what anyone pressing it in a long list actually wants, and it
-      // is the key most easily hit by accident.
-      if (event.target !== viewportRef.current) return;
-      event.preventDefault();
-      if (cursor >= 0) onSeekToLine?.(cursor);
-      return;
-    } else return;
-
-    event.preventDefault();
-    if (next === undefined || next === null) return;
-    setCursor(next);
-    revealInPicker(next, 'smooth');
-  }, [picking, pickable, cursor, onSeekToLine, revealInPicker]);
-
-  /**
    * Lights the active line up word by word as it is sung.
    *
    * LRC carries per-line timings only, so word positions are interpolated
@@ -420,7 +255,7 @@ function LyricStageInner({
    */
   useEffect(() => {
     const el = lineRefs.current[activeIndex];
-    if (!synced || picking || !el || activeIndex < 0) return;
+    if (!synced || !el || activeIndex < 0) return;
 
     const start = lines[activeIndex]?.time ?? 0;
     // The SUNG length of the line, not the gap to the next one: across an
@@ -442,20 +277,18 @@ function LyricStageInner({
       cancelAnimationFrame(litFrame.current);
       el.style.removeProperty('--lit');
     };
-  }, [activeIndex, lines, spans, synced, picking, getPosition]);
+  }, [activeIndex, lines, spans, synced, getPosition]);
 
   if (lines.length === 0) return null;
 
-  const mode = !synced ? 'static' : picking ? 'pick' : 'synced';
-
   return (
-    <div className="lyrics screen-in" data-mode={mode}>
+    <div className="lyrics screen-in" data-mode={synced ? 'synced' : 'static'}>
       {/*
         The scrolling happens here, one level in from the frame.
         The edge fades below are positioned against the frame, which does not
         scroll — when they were children of the scroller itself they moved with
         the content, and the bottom one's hard lower edge dragged a black band
-        across the middle of the line picker.
+        across the middle of anything that really scrolled.
       */}
       <div
         className="lyrics__scroll"
@@ -463,8 +296,7 @@ function LyricStageInner({
         id="main"
         tabIndex={0}
         role="region"
-        aria-label={picking ? 'Choose the line that is playing' : 'Lyrics'}
-        onKeyDown={onKeyDown}
+        aria-label="Lyrics"
       >
         {!synced && (
           <p className="label lyrics__notice">Only unsynced lyrics exist for this track</p>
@@ -472,7 +304,7 @@ function LyricStageInner({
 
         <div
           className="lyrics__reel"
-          style={synced && !picking ? { transform: `translate3d(0, ${shift}px, 0)` } : undefined}
+          style={synced ? { transform: `translate3d(0, ${shift}px, 0)` } : undefined}
         >
           {lines.map((line, i) => (
             <LyricRow
@@ -483,36 +315,16 @@ function LyricStageInner({
               isActive={i === activeIndex}
               isPast={i < activeIndex}
               seekable={synced && Boolean(onSeekToLine)}
-              showTime={picking}
               translation={line.text ? translate?.(line.text) : undefined}
               translationLang={translationLang}
-              studyOn={studyOn && !picking}
-              isNow={picking && i === activeIndex}
-              isCursor={picking && i === cursor}
-              shift={picking && i === cursor ? line.time - now : undefined}
+              studyOn={studyOn}
               onSeek={onSeekToLine}
               onWord={onWord}
-              onCursor={moveCursor}
               attach={attach}
             />
           ))}
         </div>
       </div>
-
-      {picking && (
-        /* Somewhere to come back to. Scrolling a long song quickly loses the
-           one line that gives the list its meaning — where the clock thinks
-           the song is — and hunting for it again by eye is the moment the
-           picker stopped feeling usable. */
-        <button
-          type="button"
-          className="lyrics__recentre"
-          onClick={() => { setCursor(activeIndex); revealInPicker(activeIndex, 'smooth'); }}
-        >
-          <span aria-hidden="true">◎</span>
-          Back to now
-        </button>
-      )}
 
       <div className="lyrics__fade lyrics__fade--top" aria-hidden="true" />
       <div className="lyrics__fade lyrics__fade--bottom" aria-hidden="true" />

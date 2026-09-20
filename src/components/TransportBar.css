@@ -33,15 +33,20 @@
   will-change: transform;
 }
 
-/* --- Body ----------------------------------------------------------------- */
+/* --- Body ----------------------------------------------------------------
+   Three cells: the song, the one control, the tools.
+
+   Grid rather than space-between, because the middle cell has to be the
+   middle of the BAR and not the middle of whatever is left over — otherwise
+   the play button drifts sideways as the track title changes length. */
 
 .transport__body {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: var(--s-4);
-  /* min-block-size, not a fixed height: the bar has to grow for the sync
-     controls without clipping them. */
+  /* min-block-size, not a fixed height: the bar has to grow for the controls
+     without clipping them. */
   min-block-size: var(--bar-h);
   padding-block: var(--s-2);
   padding-inline: var(--gutter) var(--gutter-end);
@@ -64,8 +69,13 @@
   text-overflow: ellipsis;
 }
 
-/* Stacked under the title rather than beside it, so a long title and a long
-   artist name don't fight for the same row. */
+.transport__sub {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  min-inline-size: 0;
+}
+
 .transport__artist {
   font-size: 0.8125rem;
   color: var(--c-fg-mute);
@@ -74,36 +84,33 @@
   text-overflow: ellipsis;
 }
 
-.transport__sep { display: none; }
+.transport__time {
+  flex: 0 0 auto;
+  color: var(--c-fg-dim);
+  font-size: 0.6875rem;
+}
 
 .transport__empty { color: var(--c-fg-mute); }
 
-.transport__end {
-  display: flex;
-  align-items: center;
-  gap: var(--s-4);
-  flex: 0 0 auto;
-}
-
-.transport__time {
-  color: var(--c-fg-mute);
-  flex: 0 0 auto;
-  font-size: 0.75rem;
-}
+.transport__centre { display: flex; justify-content: center; }
+.transport__end { display: flex; justify-content: flex-end; min-inline-size: 0; }
 
 /* --- Responsive ----------------------------------------------------------- */
-
-@media (max-width: 767px) {
-  .transport__end { gap: var(--s-2); }
-}
 
 @media (max-width: 599px) {
   .transport__body { padding-inline: var(--s-4); gap: var(--s-3); }
   .transport__artist { font-size: 0.75rem; }
+
+  /*
+   * Below this the tools genuinely need more room than half the leftover
+   * width, and a 1fr track would let them overflow the bar rather than take
+   * it from the title. So the last cell is sized to its contents and the
+   * title takes whatever is left — the play control stops being exactly
+   * centred, which matters far less than the tools staying on screen.
+   */
+  .transport__body { grid-template-columns: minmax(0, 1fr) auto auto; }
 }
 
-/* Below this the timecode and the controls fight for the same space, and the
-   controls win — position is already shown by the progress hairline. */
-@media (max-width: 479px) {
+@media (max-width: 400px) {
   .transport__time { display: none; }
 }

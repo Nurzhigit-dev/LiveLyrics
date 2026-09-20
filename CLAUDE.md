@@ -21,7 +21,7 @@ small Node scripts, browser logic by importing modules in the browser pane
 
 **For anything on screen after a match, use `?demo`** — `?demo`, `?demo=ru` or
 `?demo=kk` in `npm run dev` opens straight into the synced view with an
-invented song playing. Without it the lyric reel, the picker, the word
+invented song playing. Without it the lyric reel, the timeline, the word
 highlight and the translations can only be reached by playing real music at a
 real microphone. It lives in `src/lib/demo.ts`, is imported dynamically behind
 `import.meta.env.DEV`, and never reaches a production build. When importing a
@@ -57,6 +57,10 @@ One shared brain, three thin adapters:
 Client: `src/hooks/useLiveLyrics.ts` is the engine (listening, recognition,
 sync, pause, song changes). `src/App.tsx` only renders.
 
+Interface: `LyricStage` is the reel, `SyncBar` the timeline, `Controls` the
+three control groups (top bar / bottom centre / bottom end), `WordCard` one
+looked-up word.
+
 The study layer is deliberately a separate hook, `src/hooks/useStudy.ts`, over
 `src/lib/translate.ts` (lines and words) and `src/lib/dictionary.ts` (English
 definitions). It touches nothing in the engine, so a translation failing in any
@@ -80,30 +84,49 @@ Each of these was a bug once. Please don't "simplify" them back.
 - **Word timing uses `computeSungSpans`**, measured from the song's own pace —
   not the gap to the next line, which smears words across instrumental breaks.
 - **The lyric reel moves by `transform`, never `scrollTop`.** Scroll offsets
-  can't be composited; the glide stuttered. Exception: "find line" mode is a
-  real scroll container.
+  can't be composited; the glide stuttered. Exception: unsynced ("static")
+  lyrics are a real scroll container.
 - **The edge fades are children of `.lyrics`, and `.lyrics__scroll` inside it
   does the scrolling.** An absolutely positioned child of a scroll container is
   placed against its *unscrolled* box, so fades inside the scroller travel with
-  the content — invisible while following, but in the picker it dragged the
-  bottom fade's hard edge across the middle of the screen as a black band.
-  Don't collapse the two elements back into one.
+  the content — invisible while following, but anywhere that really scrolled it
+  dragged the bottom fade's hard edge across the middle of the screen as a
+  black band. Don't collapse the two elements back into one.
+- **The timeline holds the clock at the dragged position** (`scrub ?? hold`
+  into `useSongClock`), which is the whole reason the lyrics follow your thumb
+  instead of you having to read timecodes. Letting go re-anchors to that
+  instant. It replaced a list of lines you tapped one of; don't bring the list
+  back as "precision" — the drag is precise, because you are matching what you
+  can hear, not what you can read.
+- **Nothing that identifies may fire while `adjusting` or `scrub` is set.**
+  Scrubbing to the end of a track looks exactly like the track finishing, and
+  `listenForNext` would spend a recognition on a song that is still playing.
 - **`--f-display` lists Archivo *then* Golos Text.** Archivo has no Cyrillic, so
   that ordering is what puts Russian and Kazakh in a real typeface instead of
   Arial, per character, with no language detection anywhere. Reordering or
   trimming the stack silently breaks every Cyrillic lyric — and the
   translations, which are Cyrillic beneath Latin on the same screen.
-- **Kazakh is told from Russian by its own letters** (`ә ғ қ ң ө ұ ү һ і`), not
-  by asking whether the text is Cyrillic. Sending Kazakh to a Russian
-  translator doesn't fail — it transliterates, confidently and wrongly.
+- **The song's language is detected, never guessed.** `sl=auto`, and the code
+  the translator reports back is what the UI trusts. An earlier version worked
+  it out from the script, which is fine until a French song turns up — and
+  worse for Kazakh, which a Russian translator does not reject but
+  transliterates, confidently and wrongly. Only the two *targets* are fixed
+  (RU and EN); the source is whatever the song is.
+- **Cache keys are target + text, never source + target + text.** The source is
+  a property of the text, so putting it in the key only splits one entry into
+  two identical ones. The detected language is cached separately under the
+  song's opening line, because a fully cached song fetches nothing and would
+  otherwise have no idea what language it is in.
 - **Lines are translated in one newline-joined batch, and the line count is
   checked on the way back.** A translator may merge two sentences; an unchecked
   off-by-one puts every later line under the wrong words. On a mismatch it
   redoes the batch one line at a time.
 - **Studying makes words the tap target, so a lyric line is a `<p>` then, not a
   `<button>`.** A button inside a button is invalid and swallows the tap.
-  Choosing a line keeps its own view ("Find line") and its own button on the
-  word card.
+  Moving the clock keeps the timeline, and "Play from here" on the word card.
+- **One filled accent control per bar, and it is the play button.** The tools
+  beside it light up as outlines. Filled, they read as equals and the bar
+  became four solid shapes with no focus.
 - **Nothing blurs the lyric text.** Animating a filter on text re-rasterises
   every glyph every frame. Softness lives in the background (`Ambience`).
 - **`LyricStage` and its rows are memoised.** The app re-renders ~10×/sec for
@@ -158,7 +181,7 @@ already on screen.
 
 The full path with real music through a real microphone. Everything else —
 signing, offsets, lyric matching, silence detection, resampling, the UI states,
-the line picker, the translations and the word card — has been exercised
+the timeline, the translations and the word card — has been exercised
 directly. Sync accuracy in a real room is the open question.
 
 Also unverified: how the two translators behave once the day's allowance is
