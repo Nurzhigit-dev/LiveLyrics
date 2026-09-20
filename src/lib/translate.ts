@@ -295,11 +295,18 @@ function chunk(texts: string[]): string[][] {
  *
  * Keyed by text rather than by index on purpose: a chorus that comes round
  * four times is one entry, translated once.
+ *
+ * `onPartial` is handed everything translated so far after each batch. A whole
+ * song is a second or two of network, and waiting for all of it before showing
+ * any of it meant pressing Translate and watching nothing happen — so the
+ * caller puts the line you are actually on at the front of `texts` and shows
+ * each batch as it lands.
  */
 export async function translateLines(
   texts: string[],
   to: TargetLang,
   signal?: AbortSignal,
+  onPartial?: (map: ReadonlyMap<string, string>, detected: string | null) => void,
 ): Promise<TranslatedLines> {
   const out = new Map<string, string>();
   const sample = texts[0] ?? '';
@@ -370,6 +377,9 @@ export async function translateLines(
       }
     }
     if (quota) break;
+    // Each batch is shown as it lands, so the strip fills in while the rest of
+    // the song is still on the wire.
+    onPartial?.(new Map(out), detected);
   }
 
   // A song already in the target language legitimately produces nothing: every

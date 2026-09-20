@@ -1,0 +1,80 @@
+/* ============================================================================
+   The translation band.
+
+   Fixed height, always. That is the whole point: the lyric reel above it is
+   measured and positioned on every line change, so a band that grew and shrank
+   with the length of each translation would make the reel re-align — and the
+   re-align is the expensive part. Two lines of room, whatever is in it.
+   ========================================================================== */
+
+.tstrip {
+  flex: 0 0 auto;
+  z-index: var(--z-bar);
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--gutter-end) var(--s-3) var(--gutter);
+
+  /* Two lines at the size below, so the tallest translation fits and the
+     shortest leaves the band exactly as tall. */
+  min-block-size: 4.25rem;
+
+  /* No rule above it. A border here would read as a second transport bar and
+     cut the lyrics off; the band should feel like the bottom of the lyric
+     area, not like another piece of furniture. */
+  background: linear-gradient(rgb(20 5 9 / 0), rgb(20 5 9 / 0.55));
+}
+
+/* Says which language this is, which matters because it changes: a Russian
+   song is read in English and an English one in Russian, and the band looks
+   the same either way. */
+.tstrip__tag {
+  flex: 0 0 auto;
+  color: var(--c-accent);
+  opacity: 0.72;
+  /* Sits with the first line of the text rather than the middle of the band,
+     so it reads as a label on the sentence. */
+  line-height: 1.5;
+}
+
+.tstrip__text {
+  min-inline-size: 0;
+  font-size: clamp(1rem, 1.6vw, 1.375rem);
+  line-height: 1.45;
+  color: var(--c-second);
+  font-variation-settings: 'wght' 500, 'wdth' 100;
+  letter-spacing: normal;
+
+  /* Two lines, then ellipsis. A translation longer than that is a run-on the
+     band was never going to hold, and growing to fit it would move the reel. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+
+  animation: tstrip-in var(--d-base) var(--e-out);
+}
+
+.tstrip__text--empty { color: var(--c-fg-dim); animation: none; }
+
+/* Opacity only. A translation changing every few seconds is the most frequent
+   animation in the app, and it must never cost a layout. */
+@keyframes tstrip-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* --- Responsive ----------------------------------------------------------- */
+
+@media (max-width: 599px) {
+  .tstrip {
+    padding-inline: var(--s-4);
+    gap: var(--s-2);
+    min-block-size: 3.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tstrip__text { animation: none; }
+}

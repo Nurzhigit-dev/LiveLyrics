@@ -79,7 +79,13 @@ interface Translated {
 
 const EMPTY: ReadonlyMap<string, string> = new Map();
 
-export function useStudy(lyricLines: LyricLine[]) {
+/**
+ * Lines translated before the rest of the song, so the band under the lyrics
+ * fills in almost at once rather than after the whole track has come back.
+ */
+const PRIORITY_LINES = 4;
+
+export function useStudy(lyricLines: LyricLine[], activeIndex = 0) {
   const [on, setOn] = useState(() => load(ON_KEY, (v) => v === '1', false));
   const [target, setTargetState] = useState<TargetLang>(() =>
     load<TargetLang>(TARGET_KEY, (v) => (v === 'ru' || v === 'en' ? v : null), 'ru'),
@@ -94,30 +100,60 @@ export function useStudy(lyricLines: LyricLine[]) {
     [lyricLines],
   );
 
-  /* Translate the whole song at once.
+  /*
+   * Where the song is, readable by the translate effect without being one of
+   * its dependencies. It only matters at the instant the effect starts — which
+   * line to fetch first — and listing it as a dependency would restart the
+   * whole translation every time the song moved on a line.
+   */
+  const activeRef = useRef(activeIndex);
+  useEffect(() => { activeRef.current = activeIndex; }, [activeIndex]);
+
+  /*
+   * Translate the song, nearest line first, and show each batch as it lands.
    *
-   * Lines are batched, so this is one or two requests rather than forty, and
-   * translating everything up front means scrolling ahead shows translated
-   * text immediately instead of a trail of placeholders filling in behind the
-   * reader. */
+   * The order matters more than it sounds. Translating from the top and
+   * waiting for all of it meant pressing Translate and watching nothing happen
+   * for a second or two — and if the song was halfway through, the line you
+   * were actually on was in the last batch to arrive. Now a handful of lines
+   * starting at the current one go first, in a request small enough to come
+   * back almost at once, and the rest of the song streams in behind them.
+   */
   useEffect(() => {
     if (!on || texts.length === 0) return;
 
     const controller = new AbortController();
     const { signal } = controller;
 
+    // The song's own lines, read from where it is now, wrapping at the end.
+    const from = Math.max(0, Math.min(activeRef.current, lyricLines.length - 1));
+    const ordered = [...new Set([
+      ...lyricLines.slice(from).map((l) => l.text.trim()),
+      ...lyricLines.slice(0, from).map((l) => l.text.trim()),
+    ].filter(Boolean))];
+
     const run = async (): Promise<Translated> => {
+      const publish = (map: ReadonlyMap<string, string>, detected: string | null, to: TargetLang) => {
+        if (!signal.aborted) setResult({ forTexts: texts, forTarget: target, to, map, detected, error: null });
+      };
+
       let to = target;
-      let batch = await translateLines(texts, to, signal);
+      let head = await translateLines(ordered.slice(0, PRIORITY_LINES), to, signal);
 
       // The song turned out to be written in the language it was going to be
       // translated into. Rather than showing a screen of nothing, read it in
-      // the other one — which, with two targets, needs no choosing.
-      if (batch.detected === to) {
+      // the other one — which, with two targets, needs no choosing. Caught on
+      // the first few lines, so nothing is fetched twice in the wrong language.
+      if (head.detected === to) {
         to = otherTarget(to);
-        batch = await translateLines(texts, to, signal);
+        head = await translateLines(ordered.slice(0, PRIORITY_LINES), to, signal);
       }
-      return { forTexts: texts, forTarget: target, to, map: batch.map, detected: batch.detected, error: null };
+      publish(head.map, head.detected, to);
+
+      const all = await translateLines(ordered, to, signal, (partial, detected) =>
+        publish(partial, detected ?? head.detected, to),
+      );
+      return { forTexts: texts, forTarget: target, to, map: all.map, detected: all.detected ?? head.detected, error: null };
     };
 
     run()
@@ -140,7 +176,9 @@ export function useStudy(lyricLines: LyricLine[]) {
       });
 
     return () => controller.abort();
-  }, [on, texts, target]);
+    // `lyricLines` is what `texts` is derived from, so the two always change
+    // together — it is read here only to put the song back in its own order.
+  }, [on, texts, target, lyricLines]);
 
   useEffect(() => () => cardRef.current?.abort(), []);
 

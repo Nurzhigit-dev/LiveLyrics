@@ -203,27 +203,6 @@
   50%      { opacity: 1;   transform: scale(1.1); }
 }
 
-/* --- The second language --------------------------------------------------
-   Set under the line, never beside it: a translation reads as a second line
-   of the same thought, and a parallel column would halve the width available
-   to both. Lighter, warmer and untracked, so it is plainly a note about the
-   line rather than another line of the song. */
-
-.lyrics__translation {
-  display: block;
-  /* Proportional to the lyric, with a floor so it never falls below reading
-     size on a phone. */
-  font-size: max(0.95rem, 0.40em);
-  line-height: 1.32;
-  margin-block-start: 0.24em;
-  max-inline-size: 30ch;
-  color: var(--c-second);
-  letter-spacing: normal;
-  font-variation-settings: 'wght' 500, 'wdth' 100;
-  text-shadow: none;
-  text-wrap: pretty;
-}
-
 /* --- Tappable words -------------------------------------------------------
    Each word is its own button so a single one can be looked up. `display:
    inline` rather than inline-block, and the space between words is a real
@@ -262,24 +241,6 @@
   outline-offset: 2px;
   border-radius: var(--r-sm);
 }
-
-/*
- * Studying is reading, not following: the lines ahead have to be legible
- * before they arrive, and every line now carries a translation underneath, so
- * the type comes down a size and the distant lines come up in brightness.
- */
-.lyrics__line--study {
-  font-size: clamp(1.5rem, 3.9vw, 3.25rem);
-  max-inline-size: 22ch;
-}
-
-.lyrics__line--study[data-distance='1'] { opacity: 0.60; }
-.lyrics__line--study[data-distance='2'] { opacity: 0.44; }
-.lyrics__line--study[data-distance='3'] { opacity: 0.32; }
-.lyrics__line--study[data-distance='4'] { opacity: 0.24; }
-.lyrics__line--study[data-distance='5'] { opacity: 0.16; }
-.lyrics__line--study[data-past]:not([data-active]) { opacity: 0.26; }
-.lyrics__line--study[data-past][data-distance='1'] { opacity: 0.42; }
 
 /* --- Static mode ----------------------------------------------------------
    With no timings there is no active line, so every line reads at the same
@@ -325,7 +286,6 @@
 @media (max-width: 599px) {
   .lyrics__scroll { padding-inline: var(--s-4); }
   .lyrics__line { max-inline-size: none; }
-  .lyrics__line--study { max-inline-size: none; }
   /* No gutter for a marker on a phone — tuck it above the line instead. */
   .lyrics__line::before {
     inset-inline-start: 0;

@@ -71,12 +71,19 @@ Press **Translate** in the bar, and pick **RU** or **EN** beside it.
 
 With it on, two things change.
 
-**Every line gets its meaning underneath it.** Not just the line being sung —
-the whole song is translated at once, so you can read ahead rather than
-waiting for each line to arrive.
+**A band appears under the lyrics with the meaning of the line being sung.**
+Like subtitles: the lyrics themselves are untouched — same size, same
+spacing, exactly as they look with translation off — and there is one fixed
+place to glance at. It never moves, because the band is always the same
+height whatever is in it.
 
-**Every word becomes tappable.** Tap one and a card opens under the lyrics
-with:
+The line you are on is translated first, in a request small enough to come
+back almost immediately, and the rest of the song streams in behind it. So
+pressing Translate halfway through a track fills the band in at once rather
+than after the whole song has been fetched.
+
+**Words near the line being sung become tappable.** Tap one and a card opens
+under the lyrics with:
 
 - what it means, in your language
 - its other meanings, grouped by part of speech — a song almost never wants a
@@ -89,6 +96,11 @@ Inflected words are followed to their root: tap **hid** and you get the entry
 for **hide**, not "simple past of hide". Tapping a word is a lookup, not a
 seek, so while you're reading, **Play from here** on the card does what
 tapping a line does when translation is off.
+
+What this gives up is reading ahead — you see the line being sung, not the
+next one. That's the right trade for something used while music is playing:
+the English of what's coming is already on screen above, and if you want to
+sit with a line, Pause is one press away.
 
 ### It doesn't care what the song is in
 
@@ -267,6 +279,8 @@ repository, not even as test data — and the whole thing is behind
 **Cyrillic has its own typeface, chosen by the browser one character at a time.** Archivo — which carries the whole design — ships no Cyrillic at all, so every Russian and Kazakh lyric was quietly falling through to Arial: a different skeleton, a different weight, none of the variable axes, and the Kazakh letters at the mercy of whatever the device happened to have installed. Golos Text, a ParaType face drawn for Russian and covering Kazakh, now sits *behind* Archivo in the stack rather than replacing it. Font fallback is resolved per character, so the Cyrillic lands in Golos while the Latin stays in Archivo, with no class to toggle and no language to detect — which is also exactly what a translated line needs, with both scripts on screen at once. Google serves each family split by script, so a page of English lyrics never downloads the Cyrillic and a page of Kazakh ones never downloads the Latin.
 
 **The translators are called from the page, not from this server.** They meter by IP address, so proxying them would pool every visitor into a single daily allowance and the first person to open the site would spend it for everyone. Called from the browser, each visitor spends only their own — and there is no key for the deployer to obtain, which keeps the Translate button working on any deployment with no setup.
+
+**The translation is a subtitle, not a second line of the song.** The first version put it under every lyric line, which read as clutter and measured as clutter: forty extra elements took the lyric view from 32 DOM nodes to 243 and nearly tripled the layout cost of every line change — a hitch at exactly the moment the reel is gliding. It also pushed the lyrics themselves down a size to make room, so the main thing got worse to serve the secondary one. One band at the bottom, fixed height, showing the line being sung, is how subtitles have always solved the same problem, and it leaves the lyrics completely alone. Word buttons went the same way: they exist only within two lines of the one being sung, which is the window where tapping is a real gesture rather than a theoretical one — the other two hundred were pure weight. Together: 243 nodes down to 76, and the per-line-change layout cost from 2.8× the no-translation baseline to 1.9×.
 
 **Lines are translated in one batch, and the count is checked on the way back.** A whole song joined by newlines is one request instead of forty, which is the difference between the study view being instant and it trickling in. But a translator is free to merge two sentences into one, and a silent off-by-one would put every remaining line against the wrong words — so if the number of lines doesn't survive the round trip, the batch is redone one line at a time, which always lines up.
 

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { TARGET_LABEL, TARGETS, languageName, type TargetLang } from '../lib/translate';
 import './Controls.css';
 
@@ -32,7 +33,7 @@ interface SessionProps {
   onReset: () => void;
 }
 
-export function SessionActions({ busy, onRelisten, onReset }: SessionProps) {
+export const SessionActions = memo(function SessionActions({ busy, onRelisten, onReset }: SessionProps) {
   return (
     <div className="session">
       <button
@@ -57,7 +58,7 @@ export function SessionActions({ busy, onRelisten, onReset }: SessionProps) {
       </button>
     </div>
   );
-}
+});
 
 /* --- Bottom, centre: playback --------------------------------------------- */
 
@@ -71,7 +72,7 @@ interface PlayProps {
  * round and larger than everything else. It is the control wanted most often
  * and the one most often wanted without looking at the screen.
  */
-export function PlayControl({ paused, onToggle }: PlayProps) {
+export const PlayControl = memo(function PlayControl({ paused, onToggle }: PlayProps) {
   return (
     <button
       type="button"
@@ -84,7 +85,7 @@ export function PlayControl({ paused, onToggle }: PlayProps) {
       {paused ? <PlayGlyph /> : <PauseGlyph />}
     </button>
   );
-}
+});
 
 /* --- Bottom, end: how the lyrics read ------------------------------------- */
 
@@ -102,7 +103,7 @@ interface ToolsProps {
   onSetTarget: (lang: TargetLang) => void;
 }
 
-export function ReadingTools({
+export const ReadingTools = memo(function ReadingTools({
   canAdjust, adjusting, onAdjust, studyOn, target, detected, onToggleStudy, onSetTarget,
 }: ToolsProps) {
   return (
@@ -173,7 +174,7 @@ export function ReadingTools({
       )}
     </div>
   );
-}
+});
 
 /* --- Glyphs --------------------------------------------------------------- */
 

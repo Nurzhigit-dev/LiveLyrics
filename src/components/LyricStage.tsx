@@ -14,10 +14,6 @@ interface Props {
   getPosition: () => number;
   /** Called when a line is clicked, to re-anchor the clock to that moment. */
   onSeekToLine?: (index: number) => void;
-  /** The second language under each line, when the study view is on. */
-  translate?: (text: string) => string | undefined;
-  /** The language code those translations are in. */
-  translationLang?: string;
   /** True when words should be tappable rather than whole lines. */
   studyOn?: boolean;
   /** Called with a tapped word, the line it came from, and that line's index. */
@@ -31,6 +27,18 @@ const FOCAL_RATIO = 0.40;
 /** Past this many lines away, everything looks the same. */
 const MAX_DISTANCE = 5;
 
+/**
+ * How far from the active line words stay individually tappable.
+ *
+ * Every line in the song used to be split into a button per word. On a
+ * forty-line track that is several hundred elements, and it showed: the lyric
+ * view went from 32 nodes to 243 and the layout each line change costs nearly
+ * tripled — a hitch at exactly the moment the reel is gliding. Two lines out,
+ * a line is already down to 30% opacity and nobody is aiming at it, so this is
+ * the window where tapping is a real gesture rather than a theoretical one.
+ */
+const TAP_DISTANCE = 2;
+
 /** Assumed length of the final line, which has no following timestamp. */
 const LAST_LINE_SECONDS = 4;
 
@@ -43,10 +51,8 @@ const LAST_LINE_SECONDS = 4;
  * recalculated. That work landed in the same frames as the scroll animation,
  * which is exactly when it is most visible as a stutter.
  *
- * Which is also why the translation arrives as a plain string rather than as a
- * lookup function: a function prop changes identity whenever new translations
- * land and would invalidate every row at once, where a string prop only
- * invalidates the rows whose text actually changed.
+ * Every prop here is a primitive or a stable callback for the same reason: one
+ * prop that changes identity on each render would undo all of it.
  * ------------------------------------------------------------------------ */
 
 interface RowProps {
@@ -56,20 +62,16 @@ interface RowProps {
   isActive: boolean;
   isPast: boolean;
   seekable: boolean;
-  /** The line in the reader's own language, when there is one. */
-  translation?: string;
-  /** Which language that is, so assistive tech reads it correctly. */
-  translationLang?: string;
-  /** Words are individually tappable. */
-  studyOn?: boolean;
+  /** Words in this line can be tapped to look one up. Only lines near the
+   *  active one are: see TAP_DISTANCE. */
+  tappable?: boolean;
   onSeek?: (index: number) => void;
   onWord?: (word: string, line: string, index: number) => void;
   attach: (index: number, el: HTMLElement | null) => void;
 }
 
 const LyricRow = memo(function LyricRow({
-  line, index, distance, isActive, isPast, seekable, translation, translationLang,
-  studyOn, onSeek, onWord, attach,
+  line, index, distance, isActive, isPast, seekable, tappable, onSeek, onWord, attach,
 }: RowProps) {
   const ref = useCallback(
     (el: HTMLElement | null) => attach(index, el),
@@ -95,20 +97,13 @@ const LyricRow = memo(function LyricRow({
     'aria-current': isActive ? ('true' as const) : undefined,
   };
 
-  // Under the line, never beside it: a translation reads as a second line of
-  // the same thought, and putting it in a column would halve the width
-  // available to both.
-  const under = translation ? (
-    <span className="lyrics__translation" lang={translationLang}>{translation}</span>
-  ) : null;
-
   // Studying: each word is its own target, so one can be looked up. The line
   // can't also be a button — a button inside a button isn't valid, and it
   // would swallow the tap. Moving the clock keeps the timeline, and the word
   // card offers the same line as a starting point.
-  if (studyOn) {
+  if (tappable) {
     return (
-      <p className="lyrics__line lyrics__line--study" {...shared}>
+      <p className="lyrics__line" {...shared}>
         <span className="lyrics__text">
           {words.map((word, w) => (
             /* The space between words is a real text node outside the button,
@@ -128,7 +123,6 @@ const LyricRow = memo(function LyricRow({
             </Fragment>
           ))}
         </span>
-        {under}
       </p>
     );
   }
@@ -156,10 +150,9 @@ const LyricRow = memo(function LyricRow({
       {...shared}
     >
       {content}
-      {under}
     </button>
   ) : (
-    <p className="lyrics__line" {...shared}>{content}{under}</p>
+    <p className="lyrics__line" {...shared}>{content}</p>
   );
 });
 
@@ -167,7 +160,7 @@ const LyricRow = memo(function LyricRow({
 
 function LyricStageInner({
   lines, spans, activeIndex, synced, getPosition, onSeekToLine,
-  translate, translationLang, studyOn = false, onWord,
+  studyOn = false, onWord,
 }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<Array<HTMLElement | null>>([]);
@@ -205,7 +198,11 @@ function LyricStageInner({
     if (!viewport || !el) return;
 
     const focal = viewport.clientHeight * FOCAL_RATIO;
-    setShift(focal - (el.offsetTop + el.offsetHeight / 2));
+    const next = focal - (el.offsetTop + el.offsetHeight / 2);
+    // Only when it actually moved. The observer below fires for changes that
+    // leave the focal point exactly where it was, and each of those would
+    // otherwise be a render of the whole reel for nothing.
+    setShift((prev) => (Math.abs(prev - next) < 0.5 ? prev : next));
   }, [activeIndex, synced]);
 
   // useLayoutEffect so the reel is never painted at the old position first.
@@ -215,12 +212,16 @@ function LyricStageInner({
    * Re-measure when the geometry shifts underneath us.
    *
    * A window resize is only one of the ways that happens, and it stopped being
-   * the common one: the webfont finishing its swap changes every line's
-   * height, translations arriving add a second line of text to every row, and
-   * the word card or the timeline opening takes a slice off the bottom of the
-   * viewport without the window changing size at all. A ResizeObserver on the
-   * viewport catches all of those, because every one of them ends in this box
-   * being a different size or the reel inside it being a different height.
+   * the common one: the webfont finishing its swap changes every line's height,
+   * and the translation band, the word card or the timeline opening takes a
+   * slice off the bottom of the viewport without the window changing size at
+   * all. A ResizeObserver on the viewport catches all of those.
+   *
+   * The reel itself is deliberately NOT observed. It was, back when
+   * translations were inserted into it line by line and its height really did
+   * change under us; now nothing changes the reel's height that does not also
+   * change the viewport's, and observing a four-thousand-pixel box that is
+   * always the same size only bought extra callbacks.
    */
   useEffect(() => {
     if (!synced) return;
@@ -230,10 +231,8 @@ function LyricStageInner({
     void document.fonts?.ready.then(settle);
 
     const viewport = viewportRef.current;
-    const reel = viewport?.firstElementChild;
     const observer = new ResizeObserver(settle);
     if (viewport) observer.observe(viewport);
-    if (reel) observer.observe(reel);
 
     return () => {
       cancelled = true;
@@ -314,10 +313,12 @@ function LyricStageInner({
               distance={Math.min(MAX_DISTANCE, Math.abs(i - activeIndex))}
               isActive={i === activeIndex}
               isPast={i < activeIndex}
-              seekable={synced && Boolean(onSeekToLine)}
-              translation={line.text ? translate?.(line.text) : undefined}
-              translationLang={translationLang}
-              studyOn={studyOn}
+              /* While studying, a tap means "what does this mean" — everywhere,
+                 not only on the lines close enough to have word buttons. A far
+                 line that still jumped the song would be a nasty surprise for
+                 anyone who misjudged the distance by one. */
+              seekable={synced && Boolean(onSeekToLine) && !studyOn}
+              tappable={studyOn && Math.abs(i - activeIndex) <= TAP_DISTANCE}
               onSeek={onSeekToLine}
               onWord={onWord}
               attach={attach}

@@ -117,13 +117,33 @@ Each of these was a bug once. Please don't "simplify" them back.
   two identical ones. The detected language is cached separately under the
   song's opening line, because a fully cached song fetches nothing and would
   otherwise have no idea what language it is in.
+- **The line being sung is translated before the rest of the song.** `useStudy`
+  reorders the request to start there and streams each batch into the band as
+  it lands. Translating from the top and waiting for all of it meant pressing
+  Translate and watching nothing happen — worst of all mid-song, where the line
+  you were on was in the last batch to arrive. The active index reaches the
+  effect through a ref, never a dependency, or every line change would restart
+  the whole translation.
 - **Lines are translated in one newline-joined batch, and the line count is
   checked on the way back.** A translator may merge two sentences; an unchecked
   off-by-one puts every later line under the wrong words. On a mismatch it
   redoes the batch one line at a time.
+- **The translation is one band under the lyrics, not a line under every line.**
+  Putting it on every line took the lyric view from 32 DOM nodes to 243 and
+  nearly tripled the layout cost of each line change — which lands exactly when
+  the reel is gliding — and it forced the lyrics a size smaller to fit. Word
+  buttons exist only within `TAP_DISTANCE` of the active line for the same
+  reason. Don't reintroduce per-line translations "so you can read ahead";
+  that is what Pause is for.
+- **The band is a fixed height and only its text changes.** A band that grew
+  with the length of the translation would resize the viewport, which
+  re-aligns the reel, which is the expensive part. Two lines of room, clamped.
 - **Studying makes words the tap target, so a lyric line is a `<p>` then, not a
   `<button>`.** A button inside a button is invalid and swallows the tap.
   Moving the clock keeps the timeline, and "Play from here" on the word card.
+  Lines too far out to have word buttons are not seek buttons either: one tap
+  meaning "look this up" near the middle and "jump the song" a line further
+  out is a trap for anyone who misjudges the distance.
 - **One filled accent control per bar, and it is the play button.** The tools
   beside it light up as outlines. Filled, they read as equals and the bar
   became four solid shapes with no focus.

@@ -9,6 +9,7 @@ import { TransportBar } from './components/TransportBar';
 import { SyncBar } from './components/SyncBar';
 import { PlayControl, ReadingTools, SessionActions } from './components/Controls';
 import { WordCard } from './components/WordCard';
+import { TranslationStrip } from './components/TranslationStrip';
 import { NUDGE_STEP } from './lib/calibration';
 import { SAMPLE_SECONDS, useLiveLyrics } from './hooks/useLiveLyrics';
 import { useStudy } from './hooks/useStudy';
@@ -19,7 +20,7 @@ import { useStudy } from './hooks/useStudy';
  */
 export default function App() {
   const lyrics = useLiveLyrics();
-  const study = useStudy(lyrics.lines);
+  const study = useStudy(lyrics.lines, lyrics.activeIndex);
   const { phase, busy, showLyrics, synced, adjusting, notice, nudge } = lyrics;
 
   const toggleListen = () => (busy ? lyrics.stop() : void lyrics.listen());
@@ -39,6 +40,18 @@ export default function App() {
   }, [lyrics.track, lyrics.lines]);
 
   /*
+   * Pulled out of `lyrics` and `study` one by one, rather than depending on
+   * those objects in the effect below.
+   *
+   * Both hooks return a fresh object on every render, and this component
+   * renders ten times a second to drive the clock — so depending on them meant
+   * tearing down and re-attaching the window key listener ten times a second,
+   * for a set of handlers that never actually changed.
+   */
+  const { togglePause, endAdjust } = lyrics;
+  const { card: studyCard, closeWord } = study;
+
+  /*
    * Arrow keys nudge the timing while lyrics are on screen.
    *
    * Correcting drift is the single most common thing anyone will want to do
@@ -46,6 +59,7 @@ export default function App() {
    * The guard skips the shortcut when focus is in a text field so it can never
    * swallow a real interaction.
    */
+
   useEffect(() => {
     if (!showLyrics || !synced) return;
 
@@ -55,10 +69,10 @@ export default function App() {
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
 
       // Escape closes whatever is open, innermost first.
-      if (event.key === 'Escape' && (study.card || adjusting)) {
+      if (event.key === 'Escape' && (studyCard || adjusting)) {
         event.preventDefault();
-        if (study.card) study.closeWord();
-        else lyrics.endAdjust();
+        if (studyCard) closeWord();
+        else endAdjust();
         return;
       }
 
@@ -71,7 +85,7 @@ export default function App() {
         // stealing it would break the control just used.
         if (el instanceof HTMLButtonElement || el instanceof HTMLAnchorElement) return;
         event.preventDefault();
-        lyrics.togglePause();
+        togglePause();
       } else if (event.key === 'ArrowLeft') {
         event.preventDefault();
         nudge(-NUDGE_STEP);
@@ -83,7 +97,20 @@ export default function App() {
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [showLyrics, synced, adjusting, nudge, lyrics, study]);
+  }, [showLyrics, synced, adjusting, nudge, studyCard, closeWord, endAdjust, togglePause]);
+
+  /**
+   * The translation of the line being sung — the only one on screen.
+   *
+   * Depends on `translationFor` rather than on `study`: the hook returns a
+   * fresh object every render, and this component renders ten times a second
+   * for the clock, so depending on the whole thing would recompute constantly.
+   */
+  const translationFor = study.translationFor;
+  const activeTranslation = useMemo(() => {
+    const line = lyrics.lines[lyrics.activeIndex];
+    return line?.text ? translationFor(line.text) : undefined;
+  }, [lyrics.lines, lyrics.activeIndex, translationFor]);
 
   // Readouts only ever show what is actually true right now.
   const readouts = useMemo(() => {
@@ -119,8 +146,6 @@ export default function App() {
           synced={synced}
           getPosition={lyrics.getPosition}
           onSeekToLine={synced ? lyrics.seekToLine : undefined}
-          translate={study.on ? study.translationFor : undefined}
-          translationLang={study.on ? study.target : undefined}
           studyOn={study.on}
           onWord={study.openWord}
         />
@@ -140,6 +165,22 @@ export default function App() {
           phase={phase}
           level={lyrics.level}
           caption={lyrics.caption}
+        />
+      )}
+
+      {/*
+        The translation of the line being sung, in a band of its own.
+
+        Hidden while the word card or the timeline is up: the card already
+        shows this line and its translation, and during a drag the Russian is
+        not what is being matched. Two panels stacked over the transport bar
+        would also leave very little song on a phone.
+      */}
+      {showLyrics && study.on && !study.card && !adjusting && (
+        <TranslationStrip
+          text={activeTranslation}
+          to={study.target}
+          loading={study.status === 'loading'}
         />
       )}
 
