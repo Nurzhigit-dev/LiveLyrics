@@ -1,0 +1,186 @@
+/* ============================================================================
+   The word card.
+
+   A row in the app's column, between the lyrics and the transport bar, not a
+   sheet floating over them. It therefore has to keep its own height under
+   control: a word with four senses and three definitions would otherwise push
+   the lyrics off the screen, so the body scrolls inside a capped height.
+   ========================================================================== */
+
+.wordcard {
+  flex: 0 0 auto;
+  z-index: var(--z-bar);
+  border-block-start: 1px solid var(--c-line);
+  background: rgb(26 7 11 / 0.72);
+  backdrop-filter: blur(18px) saturate(140%);
+  animation: wordcard-in var(--d-base) var(--e-out);
+}
+
+@keyframes wordcard-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.wordcard__inner {
+  max-block-size: min(38vh, 22rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s-4) var(--gutter-end) var(--s-4) var(--gutter);
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.2) transparent;
+}
+
+/* --- Head ----------------------------------------------------------------- */
+
+.wordcard__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.wordcard__word {
+  font-size: clamp(1.25rem, 3vw, 1.75rem);
+  font-variation-settings: 'wght' 700, 'wdth' 100;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  /* Lyrics arrive capitalised mid-sentence; a dictionary headword should not
+     shout back. Only the display is lowered — the lookup used the real word. */
+  text-transform: lowercase;
+}
+
+.wordcard__lang {
+  color: var(--c-fg-dim);
+  flex: 1 1 auto;
+}
+
+.wordcard__close {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  border-radius: var(--r-pill);
+  color: var(--c-fg-mute);
+  transition: color var(--d-fast) var(--e-out), background var(--d-fast) var(--e-out);
+}
+
+.wordcard__close:hover { color: var(--c-fg); background: rgb(255 255 255 / 0.1); }
+
+/* --- Meanings ------------------------------------------------------------- */
+
+.wordcard__primary {
+  margin-block-start: var(--s-1);
+  font-size: clamp(1.125rem, 2.6vw, 1.5rem);
+  font-variation-settings: 'wght' 600, 'wdth' 100;
+  color: var(--c-accent);
+  line-height: 1.3;
+}
+
+.wordcard__sense,
+.wordcard__define {
+  margin-block-start: var(--s-2);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--c-fg-mute);
+}
+
+.wordcard__define { color: var(--c-fg-soft); }
+
+/* The part of speech rides on the same line as the meaning rather than above
+   it: it is a label for the line, not a heading for a section. */
+.wordcard__pos {
+  display: inline-block;
+  margin-inline-end: var(--s-2);
+  color: var(--c-fg-dim);
+  font-size: 0.625rem;
+  vertical-align: 0.1em;
+}
+
+/* The base word a definition actually belongs to, when it isn't the one that
+   was tapped. */
+.wordcard__lemma {
+  margin-inline-end: var(--s-2);
+  color: var(--c-fg);
+  font-variation-settings: 'wght' 650, 'wdth' 100;
+}
+
+.wordcard__example {
+  display: block;
+  margin-block-start: 2px;
+  color: var(--c-fg-dim);
+  font-style: italic;
+}
+
+.wordcard__error {
+  margin-block-start: var(--s-2);
+  font-size: 0.875rem;
+  color: var(--c-danger);
+}
+
+/* --- The line it came from ------------------------------------------------ */
+
+/* Sticky, so the line the word came from stays on screen while the meanings
+   are scrolled. A long entry on a phone would otherwise push the one piece of
+   context the card exists to provide out of the bottom of it. */
+.wordcard__foot {
+  position: sticky;
+  inset-block-end: calc(var(--s-4) * -1);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-4);
+  margin-block-start: var(--s-3);
+  padding-block: var(--s-3) var(--s-4);
+  margin-block-end: calc(var(--s-4) * -1);
+  border-block-start: 1px solid var(--c-line);
+  background: rgb(23 6 10 / 0.94);
+}
+
+.wordcard__line {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wordcard__source {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--c-fg-soft);
+  /* One line each: the card is a glance, not a second lyric view. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wordcard__source--second { color: var(--c-second); }
+
+.wordcard__seek {
+  flex: 0 0 auto;
+  min-block-size: 2.25rem;
+  padding-inline: var(--s-4);
+  border-radius: var(--r-pill);
+  font-family: var(--f-mono);
+  font-size: var(--t-label);
+  font-weight: 600;
+  letter-spacing: var(--tr-label);
+  text-transform: uppercase;
+  color: var(--c-fg-mute);
+  box-shadow: inset 0 0 0 1px var(--c-line-strong);
+  white-space: nowrap;
+  transition: color var(--d-fast) var(--e-out), background var(--d-fast) var(--e-out);
+}
+
+.wordcard__seek:hover { color: var(--c-fg); background: rgb(255 255 255 / 0.1); }
+
+/* --- Responsive ----------------------------------------------------------- */
+
+@media (max-width: 599px) {
+  .wordcard__inner { padding-inline: var(--s-4); max-block-size: min(46vh, 20rem); }
+  .wordcard__foot { flex-direction: column; align-items: stretch; gap: var(--s-2); }
+  .wordcard__seek { align-self: flex-start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wordcard { animation: none; }
+}

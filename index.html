@@ -22,12 +22,19 @@
       Archivo is loaded as a variable font across both its width and weight
       axes in one file, so the huge lyric type can shift weight and condense
       without a second network request.
+
+      Golos Text is here for one reason: Archivo has no Cyrillic. Without it
+      every Russian and Kazakh lyric fell through to Arial. Google serves each
+      family split by script with a unicode-range on every @font-face, so a
+      page of English lyrics never downloads the Cyrillic files and a page of
+      Kazakh ones never downloads the Latin — the extra family costs nothing
+      until there is Cyrillic on screen to need it.
     -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=JetBrains+Mono:wght@400..700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Golos+Text:wght@400..900&family=JetBrains+Mono:wght@400..700&display=swap"
     />
 
     <title>LiveLyrics — lyrics, in time with the room</title>

@@ -19,6 +19,15 @@ There are no unit tests. Things are verified by running them: server logic with
 small Node scripts, browser logic by importing modules in the browser pane
 (`await import('/src/lib/…')`) and driving them with synthetic audio.
 
+**For anything on screen after a match, use `?demo`** — `?demo`, `?demo=ru` or
+`?demo=kk` in `npm run dev` opens straight into the synced view with an
+invented song playing. Without it the lyric reel, the picker, the word
+highlight and the translations can only be reached by playing real music at a
+real microphone. It lives in `src/lib/demo.ts`, is imported dynamically behind
+`import.meta.env.DEV`, and never reaches a production build. When importing a
+module into the pane to test it, add a cache-buster (`?bust=${Date.now()}`) or
+Vite hands back the copy from before your edit.
+
 ## Hard rules
 
 - **Never commit `.env.local`.** It holds real ACRCloud credentials. It is
@@ -27,7 +36,13 @@ small Node scripts, browser logic by importing modules in the browser pane
   `VITE_*` into the public bundle, which would publish the secret key.
   They are read in the server process only.
 - **Never put song lyrics in the repo**, including as test fixtures. Lyrics are
-  fetched at runtime from LRCLIB. Test data is invented placeholder text.
+  fetched at runtime from LRCLIB. Test data is invented placeholder text —
+  which is exactly what the three songs in `src/lib/demo.ts` are.
+- **Never proxy the translators through `server/`.** They meter by IP, so one
+  server address would be one daily allowance shared by every visitor. Called
+  from the page they cost each visitor only their own, and the deployer
+  nothing. This is the opposite of the rule for ACRCloud, and for the opposite
+  reason: that one has a secret to protect, these have no key at all.
 
 ## Shape of it
 
@@ -41,6 +56,11 @@ One shared brain, three thin adapters:
 
 Client: `src/hooks/useLiveLyrics.ts` is the engine (listening, recognition,
 sync, pause, song changes). `src/App.tsx` only renders.
+
+The study layer is deliberately a separate hook, `src/hooks/useStudy.ts`, over
+`src/lib/translate.ts` (lines and words) and `src/lib/dictionary.ts` (English
+definitions). It touches nothing in the engine, so a translation failing in any
+way leaves the lyrics running exactly as before. Keep it that way.
 
 ## Decisions that look wrong but aren't
 
@@ -62,6 +82,28 @@ Each of these was a bug once. Please don't "simplify" them back.
 - **The lyric reel moves by `transform`, never `scrollTop`.** Scroll offsets
   can't be composited; the glide stuttered. Exception: "find line" mode is a
   real scroll container.
+- **The edge fades are children of `.lyrics`, and `.lyrics__scroll` inside it
+  does the scrolling.** An absolutely positioned child of a scroll container is
+  placed against its *unscrolled* box, so fades inside the scroller travel with
+  the content — invisible while following, but in the picker it dragged the
+  bottom fade's hard edge across the middle of the screen as a black band.
+  Don't collapse the two elements back into one.
+- **`--f-display` lists Archivo *then* Golos Text.** Archivo has no Cyrillic, so
+  that ordering is what puts Russian and Kazakh in a real typeface instead of
+  Arial, per character, with no language detection anywhere. Reordering or
+  trimming the stack silently breaks every Cyrillic lyric — and the
+  translations, which are Cyrillic beneath Latin on the same screen.
+- **Kazakh is told from Russian by its own letters** (`ә ғ қ ң ө ұ ү һ і`), not
+  by asking whether the text is Cyrillic. Sending Kazakh to a Russian
+  translator doesn't fail — it transliterates, confidently and wrongly.
+- **Lines are translated in one newline-joined batch, and the line count is
+  checked on the way back.** A translator may merge two sentences; an unchecked
+  off-by-one puts every later line under the wrong words. On a mismatch it
+  redoes the batch one line at a time.
+- **Studying makes words the tap target, so a lyric line is a `<p>` then, not a
+  `<button>`.** A button inside a button is invalid and swallows the tap.
+  Choosing a line keeps its own view ("Find line") and its own button on the
+  word card.
 - **Nothing blurs the lyric text.** Animating a filter on text re-rasterises
   every glyph every frame. Softness lives in the background (`Ambience`).
 - **`LyricStage` and its rows are memoised.** The app re-renders ~10×/sec for
@@ -106,12 +148,22 @@ recognitions per song, plus one each for a doubtful match, a song change, or
 resuming from a pause. Silent audio is never sent. Be deliberate about adding
 anything that identifies more often.
 
+Translation costs the deployer nothing (see the hard rule above), but it is
+still someone's free service. The whole song is translated once, deduplicated
+by line text so a repeated chorus is one translation, and cached in
+`localStorage` across sessions. Don't add anything that re-translates text
+already on screen.
+
 ## Not yet verified
 
 The full path with real music through a real microphone. Everything else —
-signing, offsets, lyric matching, silence detection, resampling, the UI states
-— has been exercised directly. Sync accuracy in a real room is the open
-question.
+signing, offsets, lyric matching, silence detection, resampling, the UI states,
+the line picker, the translations and the word card — has been exercised
+directly. Sync accuracy in a real room is the open question.
+
+Also unverified: how the two translators behave once the day's allowance is
+actually spent. The quota path is written from their documented responses, not
+from having hit it.
 
 ## Working style
 

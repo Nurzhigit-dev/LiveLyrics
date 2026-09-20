@@ -112,6 +112,19 @@ button:disabled { cursor: not-allowed; }
 }
 .skip-link:focus-visible { transform: translateY(0); }
 
+/* A translation that couldn't be fetched. One quiet line above the transport
+   bar: the lyrics themselves are unaffected and still running underneath, so
+   this must never take the screen the way a real error does. */
+.study-error {
+  flex: 0 0 auto;
+  padding: var(--s-3) var(--gutter);
+  color: var(--c-danger);
+  text-transform: none;
+  letter-spacing: 0;
+  line-height: 1.4;
+  border-block-start: 1px solid var(--c-line);
+}
+
 /* --- Screen transitions ----------------------------------------------------
    Each top-level view fades and lifts in, so switching between the idle
    screen, the lyrics and an error reads as one surface changing rather than

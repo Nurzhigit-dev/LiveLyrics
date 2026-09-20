@@ -40,6 +40,10 @@
   --c-accent-glow: rgb(255 142 122 / 0.34);
   --c-accent-veil: rgb(255 142 122 / 0.10);
 
+  /* The second language under a lyric. Part of the same warm light, but
+     clearly a note about the line rather than another line of the song. */
+  --c-second: rgb(255 201 188 / 0.78);
+
   --c-rec:    #FF5C5C;
   --c-danger: #FF8080;
 
@@ -47,10 +51,22 @@
   --c-line-strong: rgb(255 255 255 / 0.20);
 
   /* --- Type --------------------------------------------------------------
-     Two families. Archivo carries a width axis (62–125) so a long lyric can
-     condense instead of wrapping. JetBrains Mono handles every number so
-     readouts never change width as they tick. */
-  --f-display: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+     Three families, but only ever two on screen at once. Archivo carries a
+     width axis (62–125) so a long lyric can condense instead of wrapping.
+     JetBrains Mono handles every number so readouts never change width as
+     they tick.
+
+     Golos Text sits behind Archivo in the display stack rather than beside
+     it, and that ordering is the whole mechanism. Archivo ships no Cyrillic
+     at all — not a single glyph — so every Russian and Kazakh lyric was
+     silently landing in Arial: a different skeleton, a different weight, no
+     variable axes, and the Казақ letters (ә ғ қ ң ө ұ ү і) at the mercy of
+     whatever the device happened to have. Font fallback is resolved per
+     character, so with Golos Text next in the list the Cyrillic falls to a
+     face actually drawn for it while the Latin stays in Archivo — which is
+     also exactly what a translated line needs, with both scripts on screen at
+     once. Golos is ParaType's, designed for Russian and covering Kazakh. */
+  --f-display: 'Archivo', 'Golos Text', 'Helvetica Neue', Arial, sans-serif;
   --f-mono:    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   /* Fluid, so nothing jumps at a breakpoint. */

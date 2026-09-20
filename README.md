@@ -53,7 +53,8 @@ After that it keeps listening, quietly:
 ## Features
 
 - **Pause and resume**, by button or the space bar, holding the lyrics exactly where they were
-- **Find line**: scroll the lyrics freely, tap the line that's playing, and it carries on from there
+- **Find line**: scroll the lyrics freely, tap the line that's playing, and it carries on from there — with the timestamps beside each line, the line the clock believes in marked `now`, and a preview of how far the sync is about to move
+- **Read along in Russian or Kazakh**, and tap any word for what it means — see [Studying English with it](#studying-english-with-it)
 - **Word-by-word highlighting**, paced to each song's own tempo rather than smeared across instrumental breaks
 - **Russian and Kazakh songs** match even when the recogniser and the lyric database spell the names in different scripts: `Zemfira` finds `Земфира`
 - **Stop detection**, with an automatic re-sync on resume
@@ -61,6 +62,46 @@ After that it keeps listening, quietly:
 - **Click any line** to re-anchor the sync to that exact moment
 - **Nothing to sign up for**: visitors need no account and no keys
 - **Fully keyboard accessible**, with reduced-motion support throughout
+
+---
+
+## Studying English with it
+
+Press **Translate** in the bar. It cycles: off → **RU** → **KK** → off.
+
+With it on, two things change.
+
+**Every line gets its meaning underneath it.** Not just the line being sung —
+the whole song is translated at once, so you can read ahead, and the line
+picker shows the translations too, which turns out to be the easiest way to
+find your place in a song you don't fully understand.
+
+**Every word becomes tappable.** Tap one and a card opens under the lyrics
+with:
+
+- what it means, in your language
+- its other meanings, grouped by part of speech — a song almost never wants a
+  word's first meaning
+- what it means in *English*, from Wiktionary, with an example sentence. This
+  is the part that teaches rather than just swapping one word for another
+- the line it came from, in both languages, so the word keeps its context
+
+Inflected words are followed to their root: tap **hid** and you get the entry
+for **hide**, not "simple past of hide". Tapping a word is a lookup, not a
+seek, so while you're reading, **Play from here** on the card does what
+tapping a line does when translation is off.
+
+**Which way it translates is decided by the song, not the setting.** English
+lyrics go into the language you picked. A Russian song with **RU** selected
+goes to English instead, because translating it into the language it is
+already in would tell you nothing. A Kazakh song with **RU** selected goes to
+Russian. The Kazakh letters — `ә ғ қ ң ө ұ ү һ і` — are what tells Kazakh and
+Russian apart; without that check, a Kazakh line sent to a Russian translator
+doesn't fail, it quietly comes back as nonsense.
+
+Everything translated is remembered in your browser, so a chorus costs one
+translation however many times it comes round, and a song you play again
+tomorrow costs nothing.
 
 ---
 
@@ -74,6 +115,8 @@ Free, with no card at any point.
 The ACRCloud key belongs to **whoever deploys the site**, not to visitors. That's what makes it usable by anyone, but it also means the free tier's monthly recognition limit is a *shared pool across all your visitors combined*.
 
 A typical song uses about two recognitions: the match, plus one confirming check. A doubtful match, a song change, or resuming after a pause each add one. Silent recordings are never sent, so an empty room costs nothing. When the pool runs out, the app says so politely rather than breaking.
+
+**Translation is free too, and costs the deployer nothing at all.** It is the one part of the app that does *not* go through this server: the page talks to the translators directly, so the usage counts against each visitor's own address rather than pooling into one. There is no key to hold and nothing to configure — the Translate button simply works on any deployment.
 
 ---
 
@@ -146,12 +189,35 @@ src/
     translit.ts      Cyrillic ↔ Latin, and script-neutral name comparison
     lrc.ts           LRC parsing, active-line search, sung-length estimates
     calibration.ts   the persistent timing correction
+    translate.ts     batched line translation, word lookup, and the cache
+    dictionary.ts    English definitions from Wiktionary, for the word card
+    demo.ts          an invented song for working on the UI (dev builds only)
   hooks/
     useLiveLyrics.ts the listening, recognition and sync engine
     useSongClock.ts  turns a match position into a live playback position
+    useStudy.ts      the second language, and the word card
   components/        the interface
   styles/            design tokens and base styles
 ```
+
+### Working on the lyric view without music
+
+Everything on screen after a match — the reel, the word-by-word highlight, the
+line picker, the translations — needs a song playing in the room to appear at
+all, which makes it awkward to work on.
+
+So `npm run dev` accepts `?demo`:
+
+| | |
+| --- | --- |
+| `localhost:5173/?demo` | an English song |
+| `localhost:5173/?demo=ru` | a Russian one |
+| `localhost:5173/?demo=kk` | a Kazakh one |
+
+Each drops straight into the synced view, mid-verse, with no microphone and no
+recognition spent. The words are invented — no real lyrics live in this
+repository, not even as test data — and the whole thing is behind
+`import.meta.env.DEV`, so none of it reaches a production build.
 
 ---
 
@@ -183,6 +249,14 @@ src/
 
 **The lyric reel moves by `transform`, and nothing blurs the text.** Transforms are animated by the compositor, off the main thread. Animating a `filter` on text would re-rasterise every glyph on every frame, so all the softness lives in the background instead.
 
+**The edge fades hang off a frame, not off the scroller.** They used to be children of the scrolling element, and an absolutely positioned child of a scroll container is placed against its *unscrolled* box — so both fades travelled with the content. Nothing showed while following, because nothing scrolls there. But in the line picker, which really does scroll, the bottom fade's hard lower edge was dragged into the middle of the screen: a black band lying across the lyrics that looked like a rendering fault. The scrolling now happens one element in, and the fades are positioned against an outer frame that cannot scroll.
+
+**Cyrillic has its own typeface, chosen by the browser one character at a time.** Archivo — which carries the whole design — ships no Cyrillic at all, so every Russian and Kazakh lyric was quietly falling through to Arial: a different skeleton, a different weight, none of the variable axes, and the Kazakh letters at the mercy of whatever the device happened to have installed. Golos Text, a ParaType face drawn for Russian and covering Kazakh, now sits *behind* Archivo in the stack rather than replacing it. Font fallback is resolved per character, so the Cyrillic lands in Golos while the Latin stays in Archivo, with no class to toggle and no language to detect — which is also exactly what a translated line needs, with both scripts on screen at once. Google serves each family split by script, so a page of English lyrics never downloads the Cyrillic and a page of Kazakh ones never downloads the Latin.
+
+**The translators are called from the page, not from this server.** They meter by IP address, so proxying them would pool every visitor into a single daily allowance and the first person to open the site would spend it for everyone. Called from the browser, each visitor spends only their own — and there is no key for the deployer to obtain, which keeps the Translate button working on any deployment with no setup.
+
+**Lines are translated in one batch, and the count is checked on the way back.** A whole song joined by newlines is one request instead of forty, which is the difference between the study view being instant and it trickling in. But a translator is free to merge two sentences into one, and a silent off-by-one would put every remaining line against the wrong words — so if the number of lines doesn't survive the round trip, the batch is redone one line at a time, which always lines up.
+
 ---
 
 ## Limits
@@ -195,6 +269,8 @@ Worth being honest about what this can and can't do:
 - Ambient sync is never sample-accurate. That's why the self-check, the timing correction and **Find line** exist.
 - Whether a song is recognised at all is ACRCloud's catalogue, not something this code can fix. What it can do — and does — is refuse to show a match it isn't sure of.
 - The free tier is capped per month and shared by all visitors.
+- **The translations are machine translations of song lyrics**, which is close to the hardest thing you can hand a translator: metaphor, ellipsis, deliberate ambiguity, and lines that only mean anything next to the one before. Expect the sense, not the poetry. Kazakh is noticeably weaker than Russian in both directions, because there is far less of it for the translators to have learned from.
+- The better of the two translators is an **undocumented endpoint**. It is the one with the dictionary — parts of speech, several senses per word — and it has no practical daily limit, but nobody promised it would keep working. If it stops, the app falls back to MyMemory, which is documented and free but knows nothing about parts of speech and allows roughly 5,000 characters a day per address. The lyrics themselves are unaffected either way: a failed translation is one quiet line above the transport bar, and the song keeps scrolling underneath it.
 
 ---
 

@@ -674,6 +674,31 @@ export function useLiveLyrics() {
       set.anchor({ startedAt: performance.now(), songPosition: line.time - live.current.calibration });
     };
 
+    /**
+     * Dev only: drop straight into the synced view with an invented song, so
+     * the lyric reel, the picker and the translations can be worked on without
+     * music in the room. The import is dynamic and the caller is guarded by
+     * `import.meta.env.DEV`, so none of it reaches a production build.
+     */
+    const demo = async (id: string | null) => {
+      // The guard is repeated here, not only at the caller. Without it the
+      // bundler still sees a reachable dynamic import and emits the demo as a
+      // chunk in `dist` — never fetched, but shipped.
+      if (!import.meta.env.DEV) return;
+      const { demoSong } = await import('../lib/demo');
+      const song = demoSong(id);
+      setNotice(null);
+      setCaption(null);
+      setActivity(null);
+      set.track(song.track);
+      set.lines(parseLrc(song.lrc).lines);
+      set.synced(true);
+      set.hold(null);
+      // oxlint-disable-next-line react/purity
+      set.anchor({ startedAt: performance.now(), songPosition: song.startAt });
+      set.phase('synced');
+    };
+
     const dispose = () => {
       flowRef.current?.abort();
       bgRef.current?.abort();
@@ -685,9 +710,17 @@ export function useLiveLyrics() {
     return {
       listen, stop, reset, nudge, seekToLine,
       togglePause, startPicking, stopPicking,
-      listenForNext, dispose,
+      listenForNext, demo, dispose,
     };
   }, []);
+
+  // Dev only: `?demo` loads an invented song. Stripped from production builds.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('demo')) return;
+    void engine.demo(params.get('demo'));
+  }, [engine]);
 
   // Release the microphone and cancel everything on unmount.
   useEffect(() => engine.dispose, [engine]);

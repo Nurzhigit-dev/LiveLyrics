@@ -1,14 +1,33 @@
+/* ============================================================================
+   The lyric view.
+
+   Two elements, not one. `.lyrics` is a frame that never scrolls and carries
+   the edge fades; `.lyrics__scroll` inside it is what actually scrolls.
+
+   That split is load-bearing. The fades used to be children of the scrolling
+   element, and an absolutely positioned child of a scroll container is
+   positioned against the *unscrolled* box — so both fades travelled with the
+   content. In the line picker, where the list really does scroll, the bottom
+   fade's hard lower edge was dragged into the middle of the screen as a black
+   band across the lyrics. Positioning them against a frame that cannot scroll
+   is what pins them to the real edges.
+   ========================================================================== */
+
 .lyrics {
   position: relative;
   flex: 1 1 auto;
   min-block-size: 0;
-  padding-inline: var(--gutter) var(--gutter-end);
-
-  /* The reel is moved by transform, so the viewport itself never scrolls. */
+  /* Clips the fades, and the reel when it overshoots. */
   overflow: hidden;
 }
 
-.lyrics::-webkit-scrollbar { display: none; }
+.lyrics__scroll {
+  block-size: 100%;
+  padding-inline: var(--gutter) var(--gutter-end);
+
+  /* The reel is moved by transform, so while following, nothing scrolls. */
+  overflow: hidden;
+}
 
 .lyrics__notice {
   position: sticky;
@@ -184,12 +203,90 @@
   50%      { opacity: 1;   transform: scale(1.1); }
 }
 
+/* --- The second language --------------------------------------------------
+   Set under the line, never beside it: a translation reads as a second line
+   of the same thought, and a parallel column would halve the width available
+   to both. Lighter, warmer and untracked, so it is plainly a note about the
+   line rather than another line of the song. */
+
+.lyrics__translation {
+  display: block;
+  /* Proportional to the lyric, with a floor so it never falls below reading
+     size on a phone. */
+  font-size: max(0.95rem, 0.40em);
+  line-height: 1.32;
+  margin-block-start: 0.24em;
+  max-inline-size: 30ch;
+  color: var(--c-second);
+  letter-spacing: normal;
+  font-variation-settings: 'wght' 500, 'wdth' 100;
+  text-shadow: none;
+  text-wrap: pretty;
+}
+
+/* --- Tappable words -------------------------------------------------------
+   Each word is its own button so a single one can be looked up. `display:
+   inline` rather than inline-block, and the space between words is a real
+   text node, so a long line still wraps between words exactly as plain text
+   would. `font: inherit` in the base reset drops the variable-font axes, so
+   they are inherited back explicitly — without that, every word in study mode
+   would quietly render a weight lighter than the rest of the song. */
+
+.lyrics__word--tap {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: inherit;
+  letter-spacing: inherit;
+  font-variation-settings: inherit;
+  cursor: pointer;
+
+  /* An underline that is there but invisible until wanted: the lyrics stay
+     clean to read, and the affordance appears under the pointer. Using the
+     text decoration rather than a border keeps it on the text itself when a
+     word lands at the end of a wrapped line. */
+  text-decoration-line: underline;
+  text-decoration-color: transparent;
+  text-decoration-thickness: 0.055em;
+  text-underline-offset: 0.16em;
+  transition:
+    text-decoration-color var(--d-fast) var(--e-out),
+    color                 var(--d-fast) var(--e-out);
+}
+
+.lyrics__word--tap:hover { text-decoration-color: var(--c-accent); }
+.lyrics__word--tap:focus-visible {
+  outline: var(--ring) solid var(--c-accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+/*
+ * Studying is reading, not following: the lines ahead have to be legible
+ * before they arrive, and every line now carries a translation underneath, so
+ * the type comes down a size and the distant lines come up in brightness.
+ */
+.lyrics__line--study {
+  font-size: clamp(1.5rem, 3.9vw, 3.25rem);
+  max-inline-size: 22ch;
+}
+
+.lyrics__line--study[data-distance='1'] { opacity: 0.60; }
+.lyrics__line--study[data-distance='2'] { opacity: 0.44; }
+.lyrics__line--study[data-distance='3'] { opacity: 0.32; }
+.lyrics__line--study[data-distance='4'] { opacity: 0.24; }
+.lyrics__line--study[data-distance='5'] { opacity: 0.16; }
+.lyrics__line--study[data-past]:not([data-active]) { opacity: 0.26; }
+.lyrics__line--study[data-past][data-distance='1'] { opacity: 0.42; }
+
 /* --- Static mode ----------------------------------------------------------
    With no timings there is no active line, so every line reads at the same
    legible weight and the reader drives the scrolling. */
 
 /* Without timings there is nothing to follow, so the reader scrolls by hand. */
-.lyrics[data-mode='static'] { overflow-y: auto; overscroll-behavior: contain; }
+.lyrics[data-mode='static'] .lyrics__scroll { overflow-y: auto; overscroll-behavior: contain; }
 .lyrics[data-mode='static'] .lyrics__reel { padding-block: var(--s-8) 40vh; }
 
 .lyrics[data-mode='static'] .lyrics__line {
@@ -207,13 +304,22 @@
    the one being sung, with its timestamp beside it. Nothing moves on its own:
    the listener is driving now. */
 
-.lyrics[data-mode='pick'] {
+.lyrics[data-mode='pick'] .lyrics__scroll {
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* A real scrollbar, deliberately. In every other mode it is noise, but here
+     it is the only thing that says how long the song is and where in it you
+     are looking. */
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.22) transparent;
   /* Deliberately NOT scroll-behavior: smooth. Opening the picker jumps
      straight to the line that is playing; animating there from the top of the
      song would be a long, disorienting slide on a lengthy track. Wheel and
      touch scrolling are the browser's own and stay smooth either way. */
+}
+
+.lyrics[data-mode='pick'] .lyrics__scroll:focus-visible {
+  outline: none;   /* the cursor row shows where the keyboard is instead */
 }
 
 .lyrics[data-mode='pick'] .lyrics__reel {
@@ -222,41 +328,64 @@
   will-change: auto;
   /* Enough room that the first and last lines can still sit mid-screen. */
   padding-block: 32vh 40vh;
-  gap: 0;
+  gap: 2px;
 }
 
 .lyrics[data-mode='pick'] .lyrics__line {
   display: grid;
-  grid-template-columns: 3.25rem 1fr;
+  grid-template-columns: 3.25rem minmax(0, 1fr) 4.25rem;
   gap: var(--s-3);
   align-items: baseline;
 
-  opacity: 0.72;
+  /* Was 0.72. The picker is the one view whose whole job is reading a list of
+     lines you do not yet recognise, and at that weight the lines you were
+     scanning for were the hardest thing on screen to read. */
+  opacity: 0.88;
   transform: none;
   filter: none;
   font-size: clamp(1.0625rem, 2.4vw, 1.5rem);
   font-variation-settings: 'wght' 550, 'wdth' 100;
   line-height: 1.35;
   letter-spacing: -0.01em;
-  max-inline-size: 42ch;
-  padding: var(--s-2) var(--s-3);
+  max-inline-size: 52ch;
+  padding: var(--s-3);
   margin-inline-start: calc(var(--s-3) * -1);
   border-radius: var(--r-md);
   text-shadow: none;
-  transition: opacity var(--d-fast) var(--e-out), background var(--d-fast) var(--e-out);
+  transition:
+    opacity    var(--d-fast) var(--e-out),
+    background var(--d-fast) var(--e-out);
 }
 
-.lyrics[data-mode='pick'] .lyrics__line:hover,
-.lyrics[data-mode='pick'] .lyrics__line:focus-visible {
+.lyrics[data-mode='pick'] .lyrics__body { min-inline-size: 0; }
+
+.lyrics[data-mode='pick'] .lyrics__translation {
+  font-size: 0.8125rem;
+  margin-block-start: 0.2em;
+  max-inline-size: none;
+}
+
+/* The row under the pointer, or where the arrow keys have got to. Both are the
+   same idea — "this is the one you are about to choose" — so they look the
+   same and there is only ever one of them. */
+.lyrics[data-mode='pick'] .lyrics__line[data-cursor] {
   opacity: 1;
-  background: rgb(255 255 255 / 0.08);
+  background: rgb(255 255 255 / 0.09);
 }
 
 /* Where the clock currently thinks the song is — the starting point for
    the eye, not a claim that it's correct. */
-.lyrics[data-mode='pick'] .lyrics__line[data-active] {
+.lyrics[data-mode='pick'] .lyrics__line[data-now] {
   opacity: 1;
   color: var(--c-accent);
+  box-shadow: inset 2px 0 0 var(--c-accent);
+}
+
+.lyrics[data-mode='pick'] .lyrics__line[data-now] .lyrics__translation { color: var(--c-accent-hi); }
+
+.lyrics[data-mode='pick'] .lyrics__line:focus-visible {
+  outline: var(--ring) solid var(--c-accent);
+  outline-offset: 2px;
 }
 
 .lyrics[data-mode='pick'] .lyrics__line::before { display: none; }
@@ -267,9 +396,82 @@
   text-align: end;
 }
 
-.lyrics[data-mode='pick'] .lyrics__line[data-active] .lyrics__time { color: var(--c-accent); }
+.lyrics[data-mode='pick'] .lyrics__line[data-now] .lyrics__time { color: var(--c-accent); }
 
-.lyrics[data-mode='pick'] .lyrics__rest { padding-block: var(--s-3); opacity: 0.5; }
+/* The third column: "now" on the clock's own line, and on the row you are
+   about to choose, how far the sync will move if you do. Seeing "−7.4s"
+   before committing is the difference between a considered correction and a
+   guess you have to undo. */
+.lyrics__tag {
+  font-family: var(--f-mono);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: var(--tr-label);
+  text-transform: uppercase;
+  text-align: end;
+  color: var(--c-fg-dim);
+  white-space: nowrap;
+}
+
+.lyrics[data-mode='pick'] .lyrics__line[data-cursor] .lyrics__tag { color: var(--c-fg-mute); }
+.lyrics[data-mode='pick'] .lyrics__line[data-now] .lyrics__tag { color: var(--c-accent); }
+
+.lyrics[data-mode='pick'] .lyrics__rest {
+  padding-block: var(--s-3);
+  padding-inline-start: var(--s-3);
+  margin-inline-start: calc(var(--s-3) * -1);
+  opacity: 0.5;
+}
+
+/* An instrumental break is where the clock can be too, and when it was, the
+   picker showed no "now" anywhere — the one landmark the list is read
+   against just vanished for the length of the break. */
+.lyrics[data-mode='pick'] .lyrics__rest[data-active] {
+  opacity: 1;
+  box-shadow: inset 2px 0 0 var(--c-accent);
+}
+
+.lyrics[data-mode='pick'] .lyrics__rest[data-active] span {
+  background: var(--c-accent);
+}
+
+/* --- Back to now ----------------------------------------------------------
+   Scrolling a long song quickly loses the one line that gives the list its
+   meaning. Rather than detecting when it has gone off screen — which means a
+   scroll listener, and a button that appears and disappears under the thumb —
+   it is simply always there while picking. */
+
+.lyrics__recentre {
+  position: absolute;
+  inset-block-end: var(--s-4);
+  inset-inline-end: var(--gutter-end);
+  z-index: var(--z-overlay);
+
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-block-size: 2.25rem;
+  padding-inline: var(--s-4);
+  border-radius: var(--r-pill);
+
+  font-family: var(--f-mono);
+  font-size: var(--t-label);
+  font-weight: 600;
+  letter-spacing: var(--tr-label);
+  text-transform: uppercase;
+  color: var(--c-accent);
+
+  background: rgb(28 8 12 / 0.82);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--c-accent-veil);
+  box-shadow: var(--sh-2);
+  transition:
+    background var(--d-fast) var(--e-out),
+    transform  var(--d-fast) var(--e-spring);
+}
+
+.lyrics__recentre:hover  { background: rgb(40 12 16 / 0.92); }
+.lyrics__recentre:active { transform: scale(0.95); }
 
 /* --- Edge fades ----------------------------------------------------------- */
 
@@ -293,11 +495,18 @@
   background: linear-gradient(transparent, rgb(18 4 7 / 0.85));
 }
 
+/* Shallower while picking: the fades exist to dissolve the lyrics under the
+   bars, but in a list being read they dim the very rows being scanned. */
+.lyrics[data-mode='pick'] .lyrics__fade { block-size: 12%; }
+.lyrics[data-mode='pick'] .lyrics__fade--top { background: linear-gradient(rgb(18 4 7 / 0.7), transparent); }
+.lyrics[data-mode='pick'] .lyrics__fade--bottom { background: linear-gradient(transparent, rgb(18 4 7 / 0.7)); }
+
 /* --- Responsive ----------------------------------------------------------- */
 
 @media (max-width: 599px) {
-  .lyrics { padding-inline: var(--s-4); }
+  .lyrics__scroll { padding-inline: var(--s-4); }
   .lyrics__line { max-inline-size: none; }
+  .lyrics__line--study { max-inline-size: none; }
   /* No gutter for a marker on a phone — tuck it above the line instead. */
   .lyrics__line::before {
     inset-inline-start: 0;
@@ -306,6 +515,14 @@
     inline-size: 5px;
     block-size: 5px;
   }
+
+  /* The timestamp column and the tag column both cost width the words need. */
+  .lyrics[data-mode='pick'] .lyrics__line {
+    grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+    gap: var(--s-2);
+    padding: var(--s-3) var(--s-2);
+  }
+  .lyrics__recentre { inset-inline-end: var(--s-4); }
 }
 
 @media (prefers-reduced-motion: reduce) {

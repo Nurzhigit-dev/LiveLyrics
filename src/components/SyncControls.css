@@ -112,6 +112,15 @@
 @media (max-width: 767px) {
   .sync__action { padding-inline: var(--s-4); }
   .sync__action--quiet { display: none; }
+
+  /* Except the one that leaves the line picker. A phone has no Escape key,
+     so hiding it left choosing a line as the only way out of the picker —
+     including for someone who had opened it by mistake. */
+  .sync--picking .sync__action--quiet {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
 
 @media (max-width: 479px) {
@@ -182,8 +191,26 @@
   .sync__group { display: none; }
 }
 
+/* The keyboard half of the hint is for people who have one. */
+.sync__keys { color: var(--c-fg-dim); }
+
 @media (max-width: 420px) {
   .sync__icon-label { display: none; }
   .sync__icon--wide { min-inline-size: 2.625rem; padding-inline: 0; }
   .sync__hint { font-size: 0.75rem; }
+
+  /* Two letters, and the only thing on a phone that says WHICH language is
+     on: a lit globe on its own tells you translation is running and leaves
+     you to press it twice to find out into what. */
+  .sync__icon--lang[data-active] {
+    min-inline-size: auto;
+    padding-inline: var(--s-3);
+  }
+  .sync__icon--lang[data-active] .sync__icon-label { display: inline; }
+}
+
+/* A touch device has no arrow keys to offer, and the bar has no room for the
+   offer either. */
+@media (pointer: coarse), (max-width: 599px) {
+  .sync__keys { display: none; }
 }

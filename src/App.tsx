@@ -7,7 +7,9 @@ import { LyricStage } from './components/LyricStage';
 import { Notice } from './components/Notice';
 import { TransportBar } from './components/TransportBar';
 import { SyncControls, NUDGE_STEP } from './components/SyncControls';
+import { WordCard } from './components/WordCard';
 import { SAMPLE_SECONDS, useLiveLyrics } from './hooks/useLiveLyrics';
+import { useStudy } from './hooks/useStudy';
 
 /**
  * The screen. All of the listening, recognition and syncing lives in
@@ -15,6 +17,7 @@ import { SAMPLE_SECONDS, useLiveLyrics } from './hooks/useLiveLyrics';
  */
 export default function App() {
   const lyrics = useLiveLyrics();
+  const study = useStudy(lyrics.lines);
   const { phase, busy, showLyrics, synced, picking, notice, nudge } = lyrics;
 
   const toggleListen = () => (busy ? lyrics.stop() : void lyrics.listen());
@@ -35,10 +38,11 @@ export default function App() {
       const el = document.activeElement;
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
 
-      // Escape closes the line picker, the way it closes anything else.
-      if (event.key === 'Escape' && picking) {
+      // Escape closes whatever is open, innermost first.
+      if (event.key === 'Escape' && (picking || study.card)) {
         event.preventDefault();
-        lyrics.stopPicking();
+        if (study.card) study.closeWord();
+        else lyrics.stopPicking();
         return;
       }
 
@@ -62,7 +66,7 @@ export default function App() {
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [showLyrics, synced, picking, nudge, lyrics]);
+  }, [showLyrics, synced, picking, nudge, lyrics, study]);
 
   // Readouts only ever show what is actually true right now.
   const readouts = useMemo(() => {
@@ -70,9 +74,10 @@ export default function App() {
     if (phase === 'listening') out.push(`${SAMPLE_SECONDS}s sample`);
     if (lyrics.activity) out.push(lyrics.activity);
     if (picking) out.push('choosing a line');
+    if (study.status === 'loading') out.push('translating');
     if (showLyrics && !synced) out.push('unsynced');
     return out;
-  }, [phase, lyrics.activity, picking, showLyrics, synced]);
+  }, [phase, lyrics.activity, picking, showLyrics, synced, study.status]);
 
   return (
     <>
@@ -94,6 +99,10 @@ export default function App() {
           picking={picking}
           getPosition={lyrics.getPosition}
           onSeekToLine={synced ? lyrics.seekToLine : undefined}
+          translate={study.on ? study.translationFor : undefined}
+          translationLang={study.pair?.to}
+          studyOn={study.on}
+          onWord={study.openWord}
         />
       ) : notice ? (
         <Notice
@@ -114,6 +123,28 @@ export default function App() {
         />
       )}
 
+      {/* A failed translation is worth saying once, quietly, and never at the
+          cost of the lyrics: they are still running underneath it. */}
+      {showLyrics && study.status === 'error' && study.error && (
+        <p className="study-error label" role="status">{study.error}</p>
+      )}
+
+      {showLyrics && study.card && study.pair && (
+        <WordCard
+          card={study.card}
+          to={study.pair.to}
+          onClose={study.closeWord}
+          onSeekToLine={
+            synced
+              ? () => {
+                  lyrics.seekToLine(study.card!.lineIndex);
+                  study.closeWord();
+                }
+              : undefined
+          }
+        />
+      )}
+
       <TransportBar
         track={showLyrics ? lyrics.track : null}
         position={lyrics.position}
@@ -125,6 +156,8 @@ export default function App() {
               paused={lyrics.paused}
               picking={picking}
               busy={busy}
+              studyLang={study.lang}
+              onCycleStudy={study.cycleLang}
               onNudge={nudge}
               onTogglePause={lyrics.togglePause}
               onPick={lyrics.startPicking}
