@@ -137,6 +137,10 @@ Just the words — no translation. The band under the main lyrics is for
 reading; this is for glancing at while you watch something else, and two
 languages in four lines is not a glance.
 
+The words are centred and large — it is glanced at, not read along, so there
+is one place for the eye to land. Left-aligned, the line being sung started
+somewhere different depending on how long the one before it happened to be.
+
 Resize it to taste. Everything is sized off one number that tracks the window,
 and it follows the *smaller* of width and height — drag it wide and short, the
 natural shape for a strip of lyrics over a video, and type sized off the width

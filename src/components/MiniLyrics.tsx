@@ -57,9 +57,13 @@ export const MiniLyrics = memo(function MiniLyrics({
   return (
     <div className="mini">
       <header className="mini__bar">
-        <span className="mini__dot" aria-hidden="true" data-paused={paused || undefined} />
+        {/* Empty, and exactly as wide as the button opposite it. That is what
+            centres the track name in the WINDOW rather than in the space left
+            over beside the button. */}
+        <span className="mini__spacer" aria-hidden="true" />
 
         <span className="mini__track">
+          <span className="mini__dot" aria-hidden="true" data-paused={paused || undefined} />
           {track ? (
             <>
               <span className="mini__title">{track.title}</span>

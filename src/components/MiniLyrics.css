@@ -29,16 +29,26 @@
    * wide and short — which is the natural shape for a strip of lyrics over a
    * video — and type sized off the width alone runs straight out of the
    * bottom of it.
+   *
+   * The height term is the tighter of the two on purpose. Everything stacked
+   * here comes to about eleven and a half times this number, and height is
+   * what runs out first — so 8.4vh is what keeps a little air under the last
+   * line whatever the browser's own title strip takes off the top.
    */
-  font-size: clamp(13px, min(3.6vw, 9vh), 24px);
+  font-size: clamp(14px, min(4vw, 8.4vh), 28px);
 }
 
 .mini {
   display: flex;
   flex-direction: column;
   block-size: 100%;
-  padding: 0.85em 1.1em 0;
-  gap: 0.55em;
+  padding: 0.8em 1.1em 0;
+  gap: 0.5em;
+  /* Centred, because the window is glanced at rather than read along: there is
+     one place for the eye to land, and it is the middle. Left-aligned, the
+     line being sung started in a different place depending on how long the one
+     before it was. */
+  text-align: center;
   position: relative;
   isolation: isolate;
 
@@ -70,13 +80,18 @@
 
 /* --- Bar ------------------------------------------------------------------ */
 
+/* Three columns: a spacer, the track, the button. The spacer is the same
+   width as the button, which is what puts the track name in the middle of the
+   WINDOW rather than in the middle of what is left beside the button. */
 .mini__bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1.8em minmax(0, 1fr) 1.8em;
   align-items: center;
   gap: 0.55em;
   flex: 0 0 auto;
-  min-inline-size: 0;
 }
+
+.mini__spacer { display: block; }
 
 /* The same status dot as the main app's header: lit while following, dimmed
    and still when held. */
@@ -84,6 +99,7 @@
   inline-size: 0.4em;
   block-size: 0.4em;
   flex: 0 0 auto;
+  align-self: center;
   border-radius: var(--r-pill);
   background: var(--c-accent);
   box-shadow: 0 0 0.75em var(--c-accent-glow);
@@ -95,9 +111,9 @@
 .mini__track {
   display: flex;
   align-items: baseline;
-  gap: 0.5em;
+  justify-content: center;
+  gap: 0.45em;
   min-inline-size: 0;
-  flex: 1 1 auto;
 }
 
 .mini__title {
@@ -183,7 +199,7 @@
 .mini__line--next { opacity: 0.3; }
 
 .mini__line--now {
-  font-size: 1.55em;
+  font-size: 1.8em;
   font-variation-settings: 'wght' 700, 'wdth' 100;
   color: var(--c-fg);
   -webkit-line-clamp: 2;
@@ -220,6 +236,7 @@
   display: flex;
   gap: 0.4em;
   align-items: center;
+  justify-content: center;
   padding-block: 0.6em;
 }
 
