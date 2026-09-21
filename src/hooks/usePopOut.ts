@@ -75,8 +75,9 @@ export function usePopOut() {
      */
     let opened: Window;
     try {
-      // Small, and roughly the shape of two lines of lyric plus a translation.
-      opened = await pip.requestWindow({ width: 460, height: 232 });
+      // Enough for three lines and the bar, once the browser's own title
+      // strip has taken its share off the top.
+      opened = await pip.requestWindow({ width: 480, height: 252 });
     } catch {
       setError('This browser wouldn’t open a floating window. Chrome and Edge on a computer can.');
       return;

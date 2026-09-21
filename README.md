@@ -105,9 +105,20 @@ Press **Pop out**. The lyrics move into a small window that stays on top of
 whatever you do next, which is the point: you are there to watch the video,
 not to watch a lyrics site.
 
-It shows the line before, the line being sung, its translation if you have
-that on, and the line coming — plus the track and a pause button. Resize it to
-taste; the type scales with the window.
+It shows the line before, the line being sung and the line coming, plus the
+track and a pause button. The line being sung keeps the **word-by-word light**
+from the main view, which is the one piece of motion that earns its place in a
+window this small: it tells you where in the line the singer is, and that is
+exactly what you lose by not being able to watch the reel move.
+
+Just the words — no translation. The band under the main lyrics is for
+reading; this is for glancing at while you watch something else, and two
+languages in four lines is not a glance.
+
+Resize it to taste. Everything is sized off one number that tracks the window,
+and it follows the *smaller* of width and height — drag it wide and short, the
+natural shape for a strip of lyrics over a video, and type sized off the width
+alone would run straight out of the bottom.
 
 It is the same app, not a copy: one clock, one track, one set of
 translations, rendered into a second window through a portal. Nothing has to

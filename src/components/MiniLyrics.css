@@ -5,32 +5,67 @@
    reset and the fonts all arrive with it — which is why nothing here has to
    restate a colour. What it does have to do is undo the app-shell assumptions
    in base.css, because this window is one small panel rather than a page.
+
+   Everything is sized in `em` off a single root size, and that root size
+   tracks the window. Drag the window bigger and the whole thing grows in
+   proportion rather than leaving the type stranded in the middle of it.
    ========================================================================== */
 
 .popout-body {
-  /* base.css gives body a fixed 100dvh; here that is the window, which is
-     right, but the flex column and the shell's overflow rules are not. */
   display: block;
   overflow: hidden;
-  background: var(--c-bg-deep);
-  /* Shown at whatever size the listener drags it to, so everything below is
-     sized in relative units and the whole thing scales with the window. */
-  font-size: clamp(14px, 3.2vw, 19px);
+  /* Fills the window even before .mini paints, so a resize never flashes the
+     browser's own white. */
+  background: var(--c-bg);
+
+  /*
+   * This window has a viewport of its own, so vw and vh are the window's own
+   * width and height — no container query needed to read them. Everything
+   * below is sized in em off this one number, so dragging the window bigger
+   * grows the whole thing in proportion instead of leaving the type stranded
+   * in the middle of it.
+   *
+   * Both axes, and the smaller wins. Width alone was wrong: drag the window
+   * wide and short — which is the natural shape for a strip of lyrics over a
+   * video — and type sized off the width alone runs straight out of the
+   * bottom of it.
+   */
+  font-size: clamp(13px, min(3.6vw, 9vh), 24px);
 }
 
 .mini {
   display: flex;
   flex-direction: column;
   block-size: 100%;
-  padding: 0.75em 1em 0;
-  gap: 0.5em;
+  padding: 0.85em 1.1em 0;
+  gap: 0.55em;
+  position: relative;
+  isolation: isolate;
 
-  /* A quieter version of the main field: one warm pool, no drift. Animating
-     anything ambient in a window this small would be motion in the corner of
-     someone's eye while they are trying to watch something else. */
+  /*
+   * A lit field rather than a flat panel, built from the same palette as the
+   * main screen: one warm pool behind the words, a deeper one at the far
+   * corner, and a soft darkening at the edges so the middle reads as lit.
+   * Static — a window that sits on top of a video should not have anything
+   * drifting in the corner of your eye.
+   */
   background:
-    radial-gradient(120% 90% at 20% 0%, rgb(142 28 48 / 0.34), transparent 70%),
-    radial-gradient(90% 80% at 90% 100%, rgb(74 14 28 / 0.5), transparent 70%);
+    radial-gradient(130% 120% at 8% -10%, rgb(192 58 78 / 0.30), transparent 62%),
+    radial-gradient(100% 110% at 100% 110%, rgb(74 14 28 / 0.62), transparent 70%),
+    radial-gradient(140% 120% at 50% 45%, transparent 35%, rgb(9 2 4 / 0.55) 100%),
+    var(--c-bg-deep);
+}
+
+/* A hairline of light along the top edge. One pixel, and it is the difference
+   between a rectangle of colour and something that looks made. */
+.mini::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  block-size: 1px;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.16), transparent);
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* --- Bar ------------------------------------------------------------------ */
@@ -38,20 +73,35 @@
 .mini__bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75em;
+  gap: 0.55em;
   flex: 0 0 auto;
+  min-inline-size: 0;
 }
+
+/* The same status dot as the main app's header: lit while following, dimmed
+   and still when held. */
+.mini__dot {
+  inline-size: 0.4em;
+  block-size: 0.4em;
+  flex: 0 0 auto;
+  border-radius: var(--r-pill);
+  background: var(--c-accent);
+  box-shadow: 0 0 0.75em var(--c-accent-glow);
+  transition: background var(--d-base) var(--e-out), box-shadow var(--d-base) var(--e-out);
+}
+
+.mini__dot[data-paused] { background: var(--c-fg-soft); box-shadow: none; }
 
 .mini__track {
   display: flex;
   align-items: baseline;
   gap: 0.5em;
   min-inline-size: 0;
+  flex: 1 1 auto;
 }
 
 .mini__title {
-  font-size: 0.75em;
+  font-size: 0.72em;
   font-weight: 650;
   font-variation-settings: 'wght' 650;
   letter-spacing: -0.01em;
@@ -61,32 +111,35 @@
 }
 
 .mini__artist {
-  font-size: 0.7em;
+  font-size: 0.68em;
   color: var(--c-fg-soft);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 0 1 auto;
 }
 
+/* Quiet at rest. The window is for reading, and a filled accent button in the
+   corner of it would be the brightest thing on screen. */
 .mini__play {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  inline-size: 1.9em;
-  block-size: 1.9em;
+  inline-size: 1.8em;
+  block-size: 1.8em;
   border-radius: var(--r-pill);
-  color: var(--c-accent-ink);
-  background: var(--c-accent);
-  transition: background var(--d-fast) var(--e-out);
+  color: var(--c-fg-mute);
+  background: rgb(255 255 255 / 0.08);
+  transition:
+    color      var(--d-fast) var(--e-out),
+    background var(--d-fast) var(--e-out),
+    transform  var(--d-fast) var(--e-spring);
 }
 
-.mini__play:hover { background: var(--c-accent-hi); }
-
-.mini__play[data-paused] {
-  color: var(--c-accent);
-  background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--c-accent);
-}
+.mini__play:hover  { color: var(--c-accent-ink); background: var(--c-accent); }
+.mini__play:active { transform: scale(0.92); }
+.mini__play[data-paused] { color: var(--c-accent); background: var(--c-accent-veil); }
+.mini__play[data-paused]:hover { color: var(--c-accent-ink); background: var(--c-accent); }
 
 /* --- Lines ----------------------------------------------------------------
    Centred in the space that's left, so a one-line lyric and a wrapped one
@@ -98,14 +151,15 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 0.15em;
+  gap: 0.2em;
   overflow: hidden;
 }
 
 .mini__line {
   font-family: var(--f-display);
   letter-spacing: var(--tr-tight);
-  line-height: 1.2;
+  line-height: 1.18;
+  text-wrap: balance;
   /* One line each for the neighbours, two for the one being sung: a long
      lyric must not push the others out of a window this short. */
   display: -webkit-box;
@@ -115,43 +169,82 @@
 
 .mini__line--past,
 .mini__line--next {
-  font-size: 0.85em;
+  font-size: 0.82em;
   font-variation-settings: 'wght' 550, 'wdth' 100;
   color: var(--c-fg);
-  opacity: 0.32;
   -webkit-line-clamp: 1;
   line-clamp: 1;
+  transition: opacity var(--d-slow) var(--e-out);
 }
 
-.mini__line--past { opacity: 0.2; }
+/* Already sung recedes further than still to come — the same rule the main
+   reel follows, so the two views read the same way. */
+.mini__line--past { opacity: 0.16; }
+.mini__line--next { opacity: 0.3; }
 
 .mini__line--now {
-  font-size: 1.5em;
+  font-size: 1.55em;
   font-variation-settings: 'wght' 700, 'wdth' 100;
   color: var(--c-fg);
   -webkit-line-clamp: 2;
   line-clamp: 2;
-  text-shadow: 0 2px 20px rgb(0 0 0 / 0.35);
+  margin-block: 0.1em;
+  /* Lit rather than merely brighter, and a warm bloom rather than a grey one
+     so it belongs to the field behind it. */
+  text-shadow: 0 0.06em 0.9em rgb(0 0 0 / 0.5), 0 0 1.6em rgb(255 142 122 / 0.12);
   animation: mini-in var(--d-base) var(--e-out);
 }
 
-.mini__translation {
-  font-size: 0.8em;
-  line-height: 1.3;
-  color: var(--c-second);
+.mini__line--quiet {
+  font-size: 1em;
   font-variation-settings: 'wght' 500, 'wdth' 100;
+  color: var(--c-fg-soft);
   letter-spacing: normal;
-  margin-block-start: 0.15em;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
+  text-shadow: none;
 }
 
+/* --- Word-by-word light ---------------------------------------------------
+   --lit is written to the line each frame as (progress * wordCount); each word
+   knows its own index, so the ramp is one subtraction in CSS. Same numbers as
+   the main reel, from the same hook. */
+
+.mini__word {
+  --local: calc(var(--lit, 0) - var(--i));
+  opacity: clamp(0.34, var(--local), 1);
+  transition: opacity 260ms linear;
+}
+
+/* --- Instrumental gap ----------------------------------------------------- */
+
+.mini__rest {
+  display: flex;
+  gap: 0.4em;
+  align-items: center;
+  padding-block: 0.6em;
+}
+
+.mini__rest span {
+  inline-size: 0.35em;
+  block-size: 0.35em;
+  border-radius: var(--r-pill);
+  background: var(--c-fg);
+  opacity: 0.35;
+  animation: mini-rest 1.8s var(--e-soft) infinite;
+}
+
+.mini__rest span:nth-child(2) { animation-delay: 0.22s; }
+.mini__rest span:nth-child(3) { animation-delay: 0.44s; }
+
+@keyframes mini-rest {
+  0%, 100% { opacity: 0.22; transform: scale(0.85); }
+  50%      { opacity: 0.8;  transform: scale(1.1); }
+}
+
+/* A line arrives rather than appearing: it rises the last few pixels as it
+   fades in, which at this size reads as the song moving on. */
 @keyframes mini-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from { opacity: 0; transform: translateY(0.22em); }
+  to   { opacity: 1; transform: none; }
 }
 
 /* --- Progress ------------------------------------------------------------- */
@@ -159,8 +252,8 @@
 .mini__progress {
   flex: 0 0 auto;
   block-size: 2px;
-  margin-inline: -1em;
-  background: var(--c-line);
+  margin-inline: -1.1em;
+  background: rgb(255 255 255 / 0.08);
   overflow: hidden;
 }
 
@@ -168,11 +261,21 @@
   display: block;
   block-size: 100%;
   background: linear-gradient(90deg, var(--c-accent-deep), var(--c-accent));
+  box-shadow: 0 0 0.6em var(--c-accent-glow);
   transform-origin: left center;
   transition: transform 110ms linear;
 }
 
+/* --- Small windows --------------------------------------------------------
+   Dragged down to a strip, the line before is the first thing worth losing:
+   it has already been sung, and the room for the current one matters more. */
+
+@media (max-height: 150px) {
+  .mini__line--past { display: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mini__line--now { animation: none; }
+  .mini__rest span { animation: none; opacity: 0.4; transform: none; }
   .mini__progress span { transition: none; }
 }

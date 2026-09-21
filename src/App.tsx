@@ -272,12 +272,12 @@ export default function App() {
         <MiniLyrics
           track={lyrics.track}
           lines={lyrics.lines}
+          spans={lyrics.spans}
           activeIndex={lyrics.activeIndex}
           progress={duration > 0 ? Math.min(1, Math.max(0, lyrics.position / duration)) : 0}
+          getPosition={lyrics.getPosition}
           paused={lyrics.paused}
           onTogglePause={togglePause}
-          translation={study.on ? activeTranslation : undefined}
-          translationLang={study.on ? study.target : undefined}
         />,
         popOut.win.document.body,
       )}

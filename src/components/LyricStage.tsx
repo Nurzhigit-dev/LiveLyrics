@@ -1,6 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { LyricLine } from '../types';
-import { useFrameHost } from '../lib/frames';
+import { useWordLight } from '../hooks/useWordLight';
 import './LyricStage.css';
 
 interface Props {
@@ -39,9 +39,6 @@ const MAX_DISTANCE = 5;
  * the window where tapping is a real gesture rather than a theoretical one.
  */
 const TAP_DISTANCE = 2;
-
-/** Assumed length of the final line, which has no following timestamp. */
-const LAST_LINE_SECONDS = 4;
 
 /* ---------------------------------------------------------------------------
  * One line.
@@ -165,13 +162,9 @@ function LyricStageInner({
 }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<Array<HTMLElement | null>>([]);
-  const litFrame = useRef(0);
 
   /** How far the reel is shifted, in pixels. Negative moves it upward. */
   const [shift, setShift] = useState(0);
-  /* Same reason as the clock: a hidden tab gets no frames, so the word
-     highlight has to run on whichever window is actually being rendered. */
-  const frames = useFrameHost();
 
   // Stable identity, so memoised rows are not invalidated on every render.
   const attach = useCallback((index: number, el: HTMLElement | null) => {
@@ -244,43 +237,10 @@ function LyricStageInner({
     };
   }, [align, synced]);
 
-  /**
-   * Lights the active line up word by word as it is sung.
-   *
-   * LRC carries per-line timings only, so word positions are interpolated
-   * across the line's duration — an approximation, which is why words brighten
-   * on a ramp rather than snapping on like a hard karaoke wipe.
-   *
-   * It writes one CSS custom property straight to the DOM each frame rather
-   * than going through React state, so it runs at a true 60fps and the lyric
-   * list never re-renders. The per-word arithmetic is done in CSS from that
-   * single number.
-   */
-  useEffect(() => {
-    const el = lineRefs.current[activeIndex];
-    if (!synced || !el || activeIndex < 0) return;
-
-    const start = lines[activeIndex]?.time ?? 0;
-    // The SUNG length of the line, not the gap to the next one: across an
-    // instrumental break the gap would drag the highlight far behind the voice.
-    const gap = (lines[activeIndex + 1]?.time ?? start + LAST_LINE_SECONDS) - start;
-    const span = Math.max(0.35, spans?.[activeIndex] ?? gap);
-    const words = Number(el.dataset.words ?? 1);
-
-    const tick = () => {
-      const progress = Math.min(1, Math.max(0, (getPosition() - start) / span));
-      // +0.85 so the first word is already lit as the line arrives, rather
-      // than the line sitting dark for a beat.
-      el.style.setProperty('--lit', String(progress * words + 0.85));
-      litFrame.current = frames.requestAnimationFrame(tick);
-    };
-
-    litFrame.current = frames.requestAnimationFrame(tick);
-    return () => {
-      frames.cancelAnimationFrame(litFrame.current);
-      el.style.removeProperty('--lit');
-    };
-  }, [activeIndex, lines, spans, synced, getPosition, frames]);
+  /* The word-by-word light, shared with the floating window so the two can't
+     drift apart. The element it writes to is the active row of this reel. */
+  const activeEl = useCallback(() => lineRefs.current[activeIndex] ?? null, [activeIndex]);
+  useWordLight({ getEl: activeEl, lines, spans, activeIndex, getPosition, enabled: synced });
 
   if (lines.length === 0) return null;
 

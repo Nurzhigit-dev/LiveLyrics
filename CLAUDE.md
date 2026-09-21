@@ -154,6 +154,14 @@ Each of these was a bug once. Please don't "simplify" them back.
   is on screen. Callbacks still run in this realm, so `performance.now()` is
   unchanged; only the heartbeat moves. Listing the host in the effect's
   dependencies is what migrates a running loop to the new window.
+- **The word-by-word light lives in `useWordLight`, used by both views.** The
+  two numbers that make it look right — the sung span rather than the gap to
+  the next line, and the +0.85 head start — are exactly the kind that drift
+  apart the moment they exist twice.
+- **The floating window sizes off `min(3.6vw, 9vh)`, not `vw` alone.** It has a
+  viewport of its own, so both units read that window; width alone overflows
+  the moment someone drags it wide and short, which is the natural shape for a
+  strip of lyrics over a video.
 - **The pop-out is a portal, not a second React root.** One clock, one track,
   one set of translations. A second root would need every one of them kept in
   step, and they would drift the first time something was forgotten.
