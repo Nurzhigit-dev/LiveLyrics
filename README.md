@@ -52,6 +52,8 @@ After that it keeps listening, quietly:
 
 ## Features
 
+- **Listen to this computer instead of the room** — share the tab your music is in and the recogniser gets the audio as it was made, not re-recorded off a speaker
+- **Pop the lyrics out** into a small window that floats over everything else, so you can watch the video and read along
 - **Pause and resume**, by button or the space bar, holding the lyrics exactly where they were
 - **Adjust**: a timeline you drag until the words on screen are the ones you can hear — the lyrics follow the drag as you make it, so there is nothing to read off and nothing to work out
 - **Read along in Russian or English**, whatever the song is sung in, and tap any word for what it means — see [Studying English with it](#studying-english-with-it)
@@ -62,6 +64,62 @@ After that it keeps listening, quietly:
 - **Click any line** to re-anchor the sync to that exact moment
 - **Nothing to sign up for**: visitors need no account and no keys
 - **Fully keyboard accessible**, with reduced-motion support throughout
+
+---
+
+## Two ways to listen
+
+**The room, through the microphone.** The default, and the one that works
+everywhere: point it at a speaker and press Listen.
+
+**This computer's own sound.** If the music is already playing on the machine
+you're reading on — a video, a stream, anything in another tab — press
+*"Playing on this computer? Use its sound instead"* and pick that tab.
+
+The second one is better whenever it applies, and by a distance:
+
+- The recogniser gets the audio as the file was made, instead of a recording
+  of a speaker made by a microphone in a room. Far more songs match, and the
+  position it reports is more accurate.
+- Silence is *really* silence, so a pause is noticed the instant it happens
+  rather than when the level drops below the room's noise floor.
+- **It follows the next video on its own.** When one track ends and another
+  starts, the gap is heard, the new song is identified, and its lyrics swap in.
+- It works with headphones on, which the microphone obviously cannot.
+
+The catch is browser support: sharing a tab's audio needs Chrome or Edge on a
+computer. Safari can't, Firefox can't, and phones can't — so the option is
+simply not offered there rather than offered and broken. On Windows you can
+also share your whole screen with **system audio** and catch sound from
+outside the browser entirely; macOS only allows tab audio.
+
+Nothing is recorded or kept, and the video half of the share is never looked
+at — the API refuses to hand over audio without it, so it is capped at one
+frame a second and dropped on the floor.
+
+---
+
+## The floating window
+
+Press **Pop out**. The lyrics move into a small window that stays on top of
+whatever you do next, which is the point: you are there to watch the video,
+not to watch a lyrics site.
+
+It shows the line before, the line being sung, its translation if you have
+that on, and the line coming — plus the track and a pause button. Resize it to
+taste; the type scales with the window.
+
+It is the same app, not a copy: one clock, one track, one set of
+translations, rendered into a second window through a portal. Nothing has to
+be kept in step because there is nothing to keep in step.
+
+One thing this needed underneath: **a browser stops giving a hidden tab
+animation frames**, so the moment you switch to YouTube the clock would freeze
+and the lyrics with it. The pop-out window is visible even when the tab isn't,
+so the app takes its heartbeat from whichever window is actually on screen.
+
+Chrome and Edge only, again — it's the Document Picture-in-Picture API, and
+there is no honest way to fake it elsewhere.
 
 ---
 
@@ -198,7 +256,9 @@ server/
   node-http.mjs      reading a request body however the platform left it
 src/
   lib/
-    mic.ts           one continuous microphone session with a rolling buffer
+    mic.ts           one continuous listening session with a rolling buffer,
+                     from the microphone or from a shared tab
+    frames.ts        which window the animation loops beat on
     audio.ts         resampling, levelling and WAV encoding
     identify.ts      thin client for this app's own /api/identify
     lrclib.ts        the multi-spelling lyric search and scoring
@@ -212,11 +272,13 @@ src/
     useLiveLyrics.ts the listening, recognition and sync engine
     useSongClock.ts  turns a match position into a live playback position
     useStudy.ts      the second language, and the word card
+    usePopOut.ts     the floating window, and getting the styles into it
   components/
     LyricStage.tsx   the reel, the word-by-word highlight, the translations
     SyncBar.tsx      the timeline, and the fine timing stepper
     Controls.tsx     the three control groups, and where each one lives
     WordCard.tsx     one word: meaning, senses, definition, context
+    MiniLyrics.tsx   three lines, for the floating window
     …                the rest of the interface
   styles/            design tokens and base styles
 ```

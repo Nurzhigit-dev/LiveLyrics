@@ -29,13 +29,39 @@ import './Controls.css';
 
 interface SessionProps {
   busy: boolean;
+  /** False where the browser has no floating-window API. */
+  canPopOut: boolean;
+  /** True while the floating window is open. */
+  poppedOut: boolean;
+  onPopOut: () => void;
   onRelisten: () => void;
   onReset: () => void;
 }
 
-export const SessionActions = memo(function SessionActions({ busy, onRelisten, onReset }: SessionProps) {
+export const SessionActions = memo(function SessionActions({
+  busy, canPopOut, poppedOut, onPopOut, onRelisten, onReset,
+}: SessionProps) {
   return (
     <div className="session">
+      {/* A window-level action, so it sits with the other two rather than in
+          the bar of things that change how the lyrics read. */}
+      {canPopOut && (
+        <button
+          type="button"
+          className="session__btn"
+          onClick={onPopOut}
+          data-active={poppedOut || undefined}
+          title={
+            poppedOut
+              ? 'Close the floating lyrics window'
+              : 'Put the lyrics in a small window that stays on top of everything else'
+          }
+        >
+          <PopOutGlyph />
+          <span className="session__label">{poppedOut ? 'Close' : 'Pop out'}</span>
+        </button>
+      )}
+
       <button
         type="button"
         className="session__btn"
@@ -215,6 +241,17 @@ function GlobeGlyph() {
       <circle cx="12" cy="12" r="8.5" />
       <path d="M3.5 12h17" />
       <path d="M12 3.5c2.3 2.4 3.4 5.3 3.4 8.5S14.3 18.1 12 20.5c-2.3-2.4-3.4-5.3-3.4-8.5S9.7 5.9 12 3.5z" />
+    </svg>
+  );
+}
+
+/** A pane lifting out of a larger one. */
+function PopOutGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+         strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 11V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h4" opacity="0.55" />
+      <rect x="12" y="12" width="9" height="7" rx="1.6" />
     </svg>
   );
 }

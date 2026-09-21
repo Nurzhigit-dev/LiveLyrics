@@ -1,5 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { LyricLine } from '../types';
+import { useFrameHost } from '../lib/frames';
 import './LyricStage.css';
 
 interface Props {
@@ -168,6 +169,9 @@ function LyricStageInner({
 
   /** How far the reel is shifted, in pixels. Negative moves it upward. */
   const [shift, setShift] = useState(0);
+  /* Same reason as the clock: a hidden tab gets no frames, so the word
+     highlight has to run on whichever window is actually being rendered. */
+  const frames = useFrameHost();
 
   // Stable identity, so memoised rows are not invalidated on every render.
   const attach = useCallback((index: number, el: HTMLElement | null) => {
@@ -268,15 +272,15 @@ function LyricStageInner({
       // +0.85 so the first word is already lit as the line arrives, rather
       // than the line sitting dark for a beat.
       el.style.setProperty('--lit', String(progress * words + 0.85));
-      litFrame.current = requestAnimationFrame(tick);
+      litFrame.current = frames.requestAnimationFrame(tick);
     };
 
-    litFrame.current = requestAnimationFrame(tick);
+    litFrame.current = frames.requestAnimationFrame(tick);
     return () => {
-      cancelAnimationFrame(litFrame.current);
+      frames.cancelAnimationFrame(litFrame.current);
       el.style.removeProperty('--lit');
     };
-  }, [activeIndex, lines, spans, synced, getPosition]);
+  }, [activeIndex, lines, spans, synced, getPosition, frames]);
 
   if (lines.length === 0) return null;
 

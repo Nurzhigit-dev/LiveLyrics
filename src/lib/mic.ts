@@ -1,4 +1,5 @@
-import { MicError, describeMicError, rms, toRecognitionWav } from './audio';
+import { MicError, describeMicError, describeShareError, rms, toRecognitionWav } from './audio';
+import type { SourceId } from '../types';
 
 /**
  * One continuous microphone session.
@@ -88,6 +89,12 @@ export interface MicOptions {
   onQuiet?: (since: number) => void;
   /** Sound came back; `at` is when. */
   onSound?: (at: number) => void;
+  /**
+   * The source stopped on its own — which for a screen share means the
+   * listener pressed Chrome's own "Stop sharing" button, somewhere entirely
+   * outside this page. Nothing else can tell the app that happened.
+   */
+  onEnded?: () => void;
 }
 
 /**
@@ -228,12 +235,100 @@ export class RollingAudio {
   }
 }
 
-/** The Web Audio side: opens the microphone and feeds RollingAudio. */
+/** The microphone: the room, with every browser "enhancement" switched off. */
+async function openMicrophone(): Promise<MediaStream> {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new MicError({
+      code: 'mic-unavailable',
+      message: 'This browser has no microphone API. Try Chrome, Edge or Firefox.',
+    });
+  }
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        // Every "enhancement" is tuned to isolate a voice and throw away
+        // everything else — which is exactly the music being identified.
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+      video: false,
+    });
+  } catch (err) {
+    throw new MicError(describeMicError(err));
+  }
+}
+
+/**
+ * This computer's own sound, through a shared tab or screen.
+ *
+ * Screen sharing is the only way a web page can hear what the machine is
+ * playing, and it is worth the prompt: the audio arrives as the player made
+ * it rather than re-recorded off a speaker, so the recogniser gets a clean
+ * signal, silence is really silence, and a track change is heard the instant
+ * it happens.
+ *
+ * The video track is the price of admission — `getDisplayMedia` will not hand
+ * over audio alone. It is capped at one frame a second and never drawn
+ * anywhere, and it is deliberately NOT stopped: on Chrome, ending the video
+ * track can take the whole capture down with it.
+ */
+async function openShare(): Promise<MediaStream> {
+  if (!navigator.mediaDevices?.getDisplayMedia) {
+    throw new MicError({
+      code: 'share-unavailable',
+      message:
+        'This browser can’t share a tab’s sound. Chrome or Edge on a computer can; phones and Safari can’t.',
+    });
+  }
+
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      // Small and slow: it exists only because the API insists on it.
+      video: { frameRate: { max: 1 } },
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        // Leave the sound playing out of the speakers. Capturing it should
+        // not be the same thing as muting it.
+        suppressLocalAudioPlayback: false,
+      },
+      // Offer "share system audio" on the platforms that have it, and don't
+      // offer this very tab, which would only ever capture itself.
+      systemAudio: 'include',
+      monitorTypeSurfaces: 'include',
+      selfBrowserSurface: 'exclude',
+      // Lets the listener switch to a different tab mid-session without
+      // starting over.
+      surfaceSwitching: 'include',
+    } as DisplayMediaStreamOptions);
+  } catch (err) {
+    throw new MicError(describeShareError(err));
+  }
+
+  // Picking a window, or forgetting the tick box, gives a share with a picture
+  // and no sound at all. There is nothing to listen to, so say which box.
+  if (stream.getAudioTracks().length === 0) {
+    for (const track of stream.getTracks()) track.stop();
+    throw new MicError({
+      code: 'share-silent',
+      message:
+        'That share had no sound in it. Pick a tab and tick “Also share tab audio”, or share your whole screen and tick “Also share system audio”.',
+    });
+  }
+  return stream;
+}
+
+/** The Web Audio side: opens a source and feeds RollingAudio. */
 export class MicSession {
   readonly audio: RollingAudio;
   private readonly stream: MediaStream;
   private readonly ctx: AudioContext;
-  private closed = false;
+  /** Read by the 'ended' listener, which must not re-close a closed session. */
+  closed = false;
 
   private constructor(stream: MediaStream, ctx: AudioContext, audio: RollingAudio) {
     this.stream = stream;
@@ -241,30 +336,9 @@ export class MicSession {
     this.audio = audio;
   }
 
-  static async open(opts: MicOptions = {}): Promise<MicSession> {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      throw new MicError({
-        code: 'mic-unavailable',
-        message: 'This browser has no microphone API. Try Chrome, Edge or Firefox.',
-      });
-    }
-
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          // Every "enhancement" is tuned to isolate a voice and throw away
-          // everything else — which is exactly the music being identified.
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
-        video: false,
-      });
-    } catch (err) {
-      throw new MicError(describeMicError(err));
-    }
+  static async open(opts: MicOptions & { source?: SourceId } = {}): Promise<MicSession> {
+    const source = opts.source ?? 'mic';
+    const stream = source === 'device' ? await openShare() : await openMicrophone();
 
     // The device's own rate. Forcing 8 kHz here throws in Firefox; the
     // conversion happens afterwards instead (see toRecognitionWav).
@@ -297,7 +371,19 @@ export class MicSession {
       const audio = new RollingAudio(ctx.sampleRate, { ...opts, latencyMs });
       tap.port.onmessage = (event: MessageEvent<Float32Array>) => audio.ingest(event.data, performance.now());
 
-      return new MicSession(stream, ctx, audio);
+      // "Stop sharing" is a button in the browser's own chrome, outside this
+      // page entirely. The track ending is the only word we get that it was
+      // pressed, and without it the app would sit there listening to silence.
+      const session = new MicSession(stream, ctx, audio);
+      for (const track of stream.getTracks()) {
+        track.addEventListener('ended', () => {
+          if (session.closed) return;
+          session.close();
+          opts.onEnded?.();
+        }, { once: true });
+      }
+
+      return session;
     } catch (err) {
       for (const track of stream.getTracks()) track.stop();
       void ctx.close();

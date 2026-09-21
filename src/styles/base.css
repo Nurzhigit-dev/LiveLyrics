@@ -112,10 +112,11 @@ button:disabled { cursor: not-allowed; }
 }
 .skip-link:focus-visible { transform: translateY(0); }
 
-/* A translation that couldn't be fetched. One quiet line above the transport
-   bar: the lyrics themselves are unaffected and still running underneath, so
-   this must never take the screen the way a real error does. */
-.study-error {
+/* Something small went wrong and the app carried on: a translation that
+   couldn't be fetched, a window that wouldn't open. One quiet line above the
+   transport bar, because the lyrics are unaffected and still running
+   underneath — this must never take the screen the way a real error does. */
+.app-note {
   flex: 0 0 auto;
   padding: var(--s-3) var(--gutter);
   color: var(--c-danger);

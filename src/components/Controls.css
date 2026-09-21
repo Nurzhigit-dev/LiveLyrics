@@ -81,6 +81,12 @@
 .session__btn:hover:not(:disabled) { background: rgb(255 255 255 / 0.1); }
 .session__btn--quiet { color: var(--c-fg-soft); }
 
+/* The floating window is open — the button now closes it, and says so. */
+.session__btn[data-active] {
+  color: var(--c-accent);
+  background: var(--c-accent-veil);
+}
+
 /* --- Bottom, centre: play ------------------------------------------------- */
 
 .playctl {

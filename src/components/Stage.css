@@ -71,6 +71,33 @@
   transition: color var(--d-base) var(--e-out);
 }
 
+/* --- The other way in -----------------------------------------------------
+   A link, not a button: the big round control is the offer, and this is the
+   footnote to it. Anything with a border here would read as a second, equal
+   choice and make the screen a decision rather than an invitation. */
+
+.stage__alt {
+  margin-block-start: var(--s-4);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-pill);
+  font-size: 0.8125rem;
+  /* Quiet, but not so quiet it reads as disabled — it is the better option
+     whenever the music is on this same machine, and nobody will find it if it
+     is the same weight as the background. */
+  color: var(--c-fg-mute);
+  text-decoration-line: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 0.2em;
+  transition:
+    color                 var(--d-fast) var(--e-out),
+    text-decoration-color var(--d-fast) var(--e-out);
+}
+
+.stage__alt:hover {
+  color: var(--c-accent);
+  text-decoration-color: var(--c-accent-veil);
+}
+
 /* --- Steps ----------------------------------------------------------------
    Three quiet facts, not three feature cards. */
 
@@ -107,6 +134,7 @@
 .stage__blurb,
 .stage__action,
 .stage__caption,
+.stage__alt,
 .stage__step {
   animation: stage-rise var(--d-lazy) var(--e-out) backwards;
   animation-delay: calc(var(--i, 0) * 70ms);

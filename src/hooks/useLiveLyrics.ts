@@ -7,7 +7,7 @@ import { findLyrics, LyricsError, type LrclibRecord, type LyricTarget } from '..
 import { computeSungSpans, findActiveIndex, parseLrc } from '../lib/lrc';
 import { clamp, loadCalibration, saveCalibration } from '../lib/calibration';
 import { primaryArtist, similarity, titleSimilarity, uniqueNames } from '../lib/translit';
-import type { AppPhase, Identification, LyricLine, Track } from '../types';
+import type { AppPhase, Identification, LyricLine, SourceId, Track } from '../types';
 
 /**
  * Seconds of audio for an identification. Long enough that a chorus repeated
@@ -134,6 +134,8 @@ export function useLiveLyrics() {
   const [activity, setActivity] = useState<string | null>(null);
   /** Who stopped the clock: the listener, or the room going quiet. */
   const [pausedBy, setPausedBy] = useState<'user' | 'silence' | null>(null);
+  /** What the app is listening through: the room, or this device's sound. */
+  const [source, setSource] = useState<SourceId>('mic');
   /** True while the timeline is open. */
   const [adjusting, setAdjusting] = useState(false);
   /** Where the timeline is being dragged to, or null when nobody is dragging. */
@@ -147,6 +149,7 @@ export function useLiveLyrics() {
     anchor: null as Anchor | null,
     hold: null as number | null,
     pausedBy: null as 'user' | 'silence' | null,
+    source: 'mic' as SourceId,
     adjusting: false,
     scrub: null as number | null,
     calibration,
@@ -184,6 +187,7 @@ export function useLiveLyrics() {
       anchor: (v: Anchor | null) => { live.current.anchor = v; setAnchor(v); },
       hold: (v: number | null) => { live.current.hold = v; setHold(v); },
       pausedBy: (v: 'user' | 'silence' | null) => { live.current.pausedBy = v; setPausedBy(v); },
+      source: (v: SourceId) => { live.current.source = v; setSource(v); },
       adjusting: (v: boolean) => { live.current.adjusting = v; setAdjusting(v); },
       scrub: (v: number | null) => { live.current.scrub = v; setScrub(v); },
     };
@@ -219,11 +223,34 @@ export function useLiveLyrics() {
         return show({
           kind: 'too quiet',
           title: 'It’s too quiet to hear anything.',
-          detail: 'Start the music first, then press Listen — and bring the device closer to the speaker.',
+          detail:
+            live.current.source === 'device'
+              ? 'Nothing was playing in the tab you shared. Start the music there, then press Listen — and check the share is the tab the sound is coming from.'
+              : 'Start the music first, then press Listen — and bring the device closer to the speaker.',
         }, 'nomatch');
       }
 
       if (err instanceof MicError) {
+        /*
+         * A share that didn't happen is not a microphone problem, and mostly
+         * not a problem at all — dismissing the picker is someone changing
+         * their mind. It gets its own heading and a neutral tone, because
+         * "ERROR" in red over "you closed a dialog" is the app shouting at
+         * someone for using it correctly.
+         */
+        if (err.detail.code.startsWith('share-')) {
+          return show({
+            kind: 'sharing',
+            title:
+              err.detail.code === 'share-denied'
+                ? 'No tab was shared.'
+                : 'That share had nothing to listen to.',
+            detail: err.detail.message,
+            tone: err.detail.code === 'share-denied' ? 'neutral' : 'danger',
+            // 'idle', not 'nomatch': nothing was heard and nothing failed in
+            // the pipeline, so the status line should read “ready”.
+          }, 'idle');
+        }
         return show({ kind: 'microphone', title: 'I can’t hear anything.', detail: err.detail.message, tone: 'danger' }, 'error');
       }
 
@@ -233,7 +260,9 @@ export function useLiveLyrics() {
             kind: 'no match',
             title: 'Heard it, couldn’t place it.',
             detail:
-              'It listened twice without a match. Getting closer to the speaker helps far more than turning it up — and live takes, remixes and very local releases often aren’t in the recogniser’s catalogue at all.',
+              live.current.source === 'device'
+                ? 'It listened twice without a match. The sound was clean, so this is the recogniser’s catalogue rather than the audio: live takes, remixes, covers and very local releases often aren’t in it at all.'
+                : 'It listened twice without a match. Getting closer to the speaker helps far more than turning it up — and live takes, remixes and very local releases often aren’t in the recogniser’s catalogue at all.',
           }, 'nomatch');
         }
         const HEADINGS: Record<string, { kind: string; title: string; hint?: string }> = {
@@ -348,14 +377,50 @@ export function useLiveLyrics() {
       resume(at);
     };
 
-    const ensureMic = async () => {
-      if (micRef.current) return micRef.current;
+    /**
+     * The share was stopped from the browser's own bar, not from this page.
+     *
+     * Everything on screen was true a second ago and is now about a sound
+     * nobody can hear, so the lyrics come down and the screen says what
+     * happened. Carrying on with a dead stream would just look like the app
+     * had frozen.
+     */
+    const handleSourceEnded = () => {
+      if (live.current.source !== 'device') return;
+      flowRef.current?.abort();
+      bgRef.current?.abort();
+      micRef.current = null;
+      clearReleaseTimer();
+      setLevel(0);
+      set.lines([]);
+      set.anchor(null);
+      set.hold(null);
+      set.pausedBy(null);
+      set.adjusting(false);
+      set.scrub(null);
+      show({
+        kind: 'sharing stopped',
+        title: 'The share ended.',
+        detail: 'Press Listen to share a tab again, or switch back to the microphone.',
+      }, 'idle');
+    };
+
+    /**
+     * The open session, opening one if there isn't one — or replacing it when
+     * the listener has switched between the room and this device's sound.
+     */
+    const ensureMic = async (want: SourceId) => {
+      if (micRef.current && live.current.source === want) return micRef.current;
+      closeMic();
+      set.source(want);
       micRef.current = await MicSession.open({
+        source: want,
         // The meter is only on screen while listening; don't re-render the app
         // twenty times a second for a value nobody can see.
         onLevel: (l) => { if (live.current.phase === 'listening') setLevel(l); },
         onQuiet: handleQuiet,
         onSound: handleSound,
+        onEnded: handleSourceEnded,
       });
       return micRef.current;
     };
@@ -584,7 +649,7 @@ export function useLiveLyrics() {
     /* ---- actions -------------------------------------------------------- */
 
     /** Listen for a song: the Listen button, Try again, and Again. */
-    const listen = async () => {
+    const listen = async (want: SourceId = live.current.source) => {
       flowRef.current?.abort();
       bgRef.current?.abort();
       const flow = new AbortController();
@@ -601,7 +666,7 @@ export function useLiveLyrics() {
 
       let found: Track | undefined;
       try {
-        const mic = await ensureMic();
+        const mic = await ensureMic(want);
         const { id, snap } = await recognise(mic, signal, (stage, attempt) => {
           set.phase(stage === 'listening' ? 'listening' : 'identifying');
           if (stage !== 'listening') setLevel(0);
@@ -792,6 +857,10 @@ export function useLiveLyrics() {
     busy,
     paused: phase === 'paused',
     pausedBy,
+    /** The room, or this device's own sound. */
+    source,
+    /** Whether this browser can share a tab's audio at all. */
+    canUseDevice: typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getDisplayMedia),
     adjusting,
     /** Where the timeline is being dragged to, or null when nobody is. */
     scrub,

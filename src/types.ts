@@ -50,13 +50,30 @@ export interface LyricLine {
   text: string;
 }
 
-/** What the app is currently listening through. Only one source exists today;
- *  the union is here so adding another later doesn't mean a refactor. */
-export type SourceId = 'mic';
+/**
+ * What the app is listening through.
+ *
+ * 'mic'    — the room, through the microphone.
+ * 'device' — this computer's own sound, through a shared tab or screen. The
+ *            audio arrives clean instead of being re-recorded off a speaker,
+ *            so it recognises far more reliably and hears track changes the
+ *            moment they happen. The cost is a browser that supports it and a
+ *            share prompt each time.
+ */
+export type SourceId = 'mic' | 'device';
 
 export interface AppError {
   /** Short machine-readable reason, used to pick the recovery action. */
-  code: 'mic-denied' | 'mic-unavailable' | 'no-key' | 'network' | 'unknown';
+  code:
+    | 'mic-denied'
+    | 'mic-unavailable'
+    | 'share-denied'
+    | 'share-unavailable'
+    | 'share-silent'
+    | 'share-ended'
+    | 'no-key'
+    | 'network'
+    | 'unknown';
   /** Plain sentence shown to the user: what happened and what to do. */
   message: string;
 }

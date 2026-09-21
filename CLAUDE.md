@@ -59,7 +59,11 @@ sync, pause, song changes). `src/App.tsx` only renders.
 
 Interface: `LyricStage` is the reel, `SyncBar` the timeline, `Controls` the
 three control groups (top bar / bottom centre / bottom end), `WordCard` one
-looked-up word.
+looked-up word, `MiniLyrics` the floating window's three lines.
+
+Listening has two sources behind one session: `MicSession.open({ source })`
+opens the microphone or a shared tab, and everything downstream — the ring
+buffer, silence detection, recognition, song changes — is identical for both.
 
 The study layer is deliberately a separate hook, `src/hooks/useStudy.ts`, over
 `src/lib/translate.ts` (lines and words) and `src/lib/dictionary.ts` (English
@@ -144,6 +148,30 @@ Each of these was a bug once. Please don't "simplify" them back.
   Lines too far out to have word buttons are not seek buttons either: one tap
   meaning "look this up" near the middle and "jump the song" a line further
   out is a trap for anyone who misjudges the distance.
+- **Animation loops go through `useFrameHost()`, never bare `requestAnimationFrame`.**
+  A hidden tab is not rendered, so it gets no frames — and with the pop-out
+  open the tab is *exactly* what is hidden. The loops beat on whichever window
+  is on screen. Callbacks still run in this realm, so `performance.now()` is
+  unchanged; only the heartbeat moves. Listing the host in the effect's
+  dependencies is what migrates a running loop to the new window.
+- **The pop-out is a portal, not a second React root.** One clock, one track,
+  one set of translations. A second root would need every one of them kept in
+  step, and they would drift the first time something was forgotten.
+- **A picture-in-picture document inherits no styles at all**, so `usePopOut`
+  copies every sheet into it — as text where it can read the rules, and by
+  re-linking the URL where it can't (the webfonts are cross-origin and throw).
+- **`documentPictureInPicture` existing is not permission to use it.** An
+  embedded webview reports the API and then rejects with "no window". Always
+  catch `requestWindow`; an unhandled rejection leaves the button looking
+  simply broken.
+- **Screen capture must keep its video track.** `getDisplayMedia` will not hand
+  over audio alone, and on Chrome stopping the video track can take the whole
+  capture down. It is capped at one frame a second and never drawn.
+- **A share with no audio track is the normal mistake, not an edge case** —
+  picking a window, or missing the tick box. Check `getAudioTracks().length`
+  and name the box, or the app sits listening to a picture.
+- **A track 'ended' event is the only word that "Stop sharing" was pressed.**
+  That button is in the browser's own chrome, outside the page entirely.
 - **One filled accent control per bar, and it is the play button.** The tools
   beside it light up as outlines. Filled, they read as equals and the bar
   became four solid shapes with no focus.
@@ -207,6 +235,16 @@ directly. Sync accuracy in a real room is the open question.
 Also unverified: how the two translators behave once the day's allowance is
 actually spent. The quota path is written from their documented responses, not
 from having hit it.
+
+And the floating window itself. The browser pane inside the Claude desktop app
+reports `documentPictureInPicture` and then refuses to open one ("Internal
+error: no window"), so `MiniLyrics` has only been checked by mounting its
+markup inline against the real stylesheet. The portal, the style copying and
+the frame-host switch are unexercised — test them in a real Chrome.
+
+Likewise the screen-capture path: both of its failures (picker dismissed, share
+with no audio) are verified by stubbing `getDisplayMedia`, but a real share has
+never run in this environment.
 
 ## Working style
 

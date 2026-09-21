@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useFrameHost } from '../lib/frames';
 
 /**
  * Where the song was, and when we knew it.
@@ -47,6 +48,11 @@ export interface SongClock {
 export function useSongClock(anchor: Anchor | null, nudge = 0, hold: number | null = null): SongClock {
   const [tick, setTick] = useState(0);
 
+  /* Frames come from whichever window is on screen — this tab, or the pop-out
+     when one is open. A hidden tab is never rendered, so its frames stop, and
+     the clock would freeze the moment you switched away to the music. */
+  const frames = useFrameHost();
+
   // Refs so getPosition stays a stable identity while always seeing current
   // values. Synced in a layout effect — before paint, before any animation
   // frame can read them — rather than during render.
@@ -75,8 +81,8 @@ export function useSongClock(anchor: Anchor | null, nudge = 0, hold: number | nu
     // lyric reel back a line and forward again.
     if (hold !== null || !anchor) {
       const parked = hold ?? 0;
-      frame = requestAnimationFrame(() => setTick(parked));
-      return () => cancelAnimationFrame(frame);
+      frame = frames.requestAnimationFrame(() => setTick(parked));
+      return () => frames.cancelAnimationFrame(frame);
     }
 
     let lastTenth = -1;
@@ -91,12 +97,12 @@ export function useSongClock(anchor: Anchor | null, nudge = 0, hold: number | nu
         lastTenth = tenth;
         setTick(next);
       }
-      frame = requestAnimationFrame(loop);
+      frame = frames.requestAnimationFrame(loop);
     };
 
-    frame = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(frame);
-  }, [anchor, nudge, hold, getPosition]);
+    frame = frames.requestAnimationFrame(loop);
+    return () => frames.cancelAnimationFrame(frame);
+  }, [anchor, nudge, hold, getPosition, frames]);
 
   return { position: hold ?? (anchor ? tick : 0), getPosition };
 }

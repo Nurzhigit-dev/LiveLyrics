@@ -32,6 +32,34 @@ export function describeMicError(err: unknown): AppError {
   return { code: 'unknown', message: 'The microphone could not be opened.' };
 }
 
+/**
+ * The same job for a screen share, where the failures are different ones.
+ *
+ * Dismissing the picker is by far the most common outcome and it is not an
+ * error — it is someone changing their mind — so it says what to do rather
+ * than what went wrong.
+ */
+export function describeShareError(err: unknown): AppError {
+  const name = err instanceof DOMException ? err.name : '';
+  if (name === 'NotAllowedError' || name === 'SecurityError') {
+    return {
+      code: 'share-denied',
+      message:
+        'Nothing was shared. Press it again and pick the tab your music is playing in — then tick the box that shares its sound.',
+    };
+  }
+  if (name === 'NotFoundError' || name === 'NotReadableError' || name === 'AbortError') {
+    return {
+      code: 'share-unavailable',
+      message: 'That source couldn’t be captured. Try picking a different tab or window.',
+    };
+  }
+  return {
+    code: 'share-unavailable',
+    message: 'This browser wouldn’t share the audio. Chrome and Edge on a computer can; most others can’t.',
+  };
+}
+
 /** Thrown so callers can pattern-match on `.detail` rather than parse strings. */
 export class MicError extends Error {
   /* Assigned in the body, not as a constructor parameter property — this

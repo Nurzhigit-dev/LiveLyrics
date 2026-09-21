@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Ambience } from './components/Ambience';
 import { Grain } from './components/Grain';
 import { StatusBar } from './components/StatusBar';
@@ -10,6 +11,8 @@ import { SyncBar } from './components/SyncBar';
 import { PlayControl, ReadingTools, SessionActions } from './components/Controls';
 import { WordCard } from './components/WordCard';
 import { TranslationStrip } from './components/TranslationStrip';
+import { MiniLyrics } from './components/MiniLyrics';
+import { usePopOut } from './hooks/usePopOut';
 import { NUDGE_STEP } from './lib/calibration';
 import { SAMPLE_SECONDS, useLiveLyrics } from './hooks/useLiveLyrics';
 import { useStudy } from './hooks/useStudy';
@@ -21,9 +24,14 @@ import { useStudy } from './hooks/useStudy';
 export default function App() {
   const lyrics = useLiveLyrics();
   const study = useStudy(lyrics.lines, lyrics.activeIndex);
+  const popOut = usePopOut();
   const { phase, busy, showLyrics, synced, adjusting, notice, nudge } = lyrics;
 
-  const toggleListen = () => (busy ? lyrics.stop() : void lyrics.listen());
+  const toggleListen = () => (busy ? lyrics.stop() : void lyrics.listen('mic'));
+  const listenToDevice = () => void lyrics.listen('device');
+  /* "Try again" repeats whatever was chosen, rather than silently dropping
+     back to the microphone and listening to the room instead. */
+  const retry = () => (busy ? lyrics.stop() : void lyrics.listen());
 
   /**
    * How long the song is, for the timeline.
@@ -59,7 +67,6 @@ export default function App() {
    * The guard skips the shortcut when focus is in a text field so it can never
    * swallow a real interaction.
    */
-
   useEffect(() => {
     if (!showLyrics || !synced) return;
 
@@ -131,9 +138,19 @@ export default function App() {
         readouts={readouts}
         level={lyrics.level}
         label={lyrics.pausedBy === 'user' ? 'paused' : undefined}
+        /* Also while a floating window is open with no song in it: the button
+           that closes it lives in here, and hiding it would leave the window
+           with no way back except its own title bar. */
         actions={
-          showLyrics ? (
-            <SessionActions busy={busy} onRelisten={() => void lyrics.listen()} onReset={lyrics.reset} />
+          showLyrics || popOut.win ? (
+            <SessionActions
+              busy={busy}
+              canPopOut={popOut.supported}
+              poppedOut={Boolean(popOut.win)}
+              onPopOut={() => (popOut.win ? popOut.close() : void popOut.open())}
+              onRelisten={() => void lyrics.listen()}
+              onReset={lyrics.reset}
+            />
           ) : null
         }
       />
@@ -155,14 +172,17 @@ export default function App() {
           title={notice.title}
           detail={notice.detail}
           tone={notice.tone}
-          action={{ label: busy ? 'Listening…' : 'Try again', onClick: toggleListen }}
+          action={{ label: busy ? 'Listening…' : 'Try again', onClick: retry }}
           secondary={{ label: 'Start over', onClick: lyrics.reset }}
         />
       ) : (
         <Stage
           onListen={toggleListen}
+          onListenToDevice={listenToDevice}
+          canUseDevice={lyrics.canUseDevice}
           listening={busy}
           phase={phase}
+          source={lyrics.source}
           level={lyrics.level}
           caption={lyrics.caption}
         />
@@ -184,10 +204,13 @@ export default function App() {
         />
       )}
 
-      {/* A failed translation is worth saying once, quietly, and never at the
-          cost of the lyrics: they are still running underneath it. */}
+      {/* A failed translation, or a floating window that wouldn't open. Worth
+          saying once, quietly, and never at the cost of the lyrics: they are
+          still running underneath it. */}
+      {popOut.error && <p className="app-note label" role="status">{popOut.error}</p>}
+
       {showLyrics && study.status === 'error' && study.error && (
-        <p className="study-error label" role="status">{study.error}</p>
+        <p className="app-note label" role="status">{study.error}</p>
       )}
 
       {showLyrics && study.card && (
@@ -238,6 +261,26 @@ export default function App() {
           ) : null
         }
       />
+
+      {/*
+        The floating window's contents live in this component tree — a portal,
+        not a second React root — so it shares the same clock, the same track
+        and the same translations. Nothing has to be kept in step, because
+        there is only one of everything.
+      */}
+      {popOut.win && createPortal(
+        <MiniLyrics
+          track={lyrics.track}
+          lines={lyrics.lines}
+          activeIndex={lyrics.activeIndex}
+          progress={duration > 0 ? Math.min(1, Math.max(0, lyrics.position / duration)) : 0}
+          paused={lyrics.paused}
+          onTogglePause={togglePause}
+          translation={study.on ? activeTranslation : undefined}
+          translationLang={study.on ? study.target : undefined}
+        />,
+        popOut.win.document.body,
+      )}
 
       <Ambience />
       <Grain />
