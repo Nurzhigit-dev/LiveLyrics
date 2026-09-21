@@ -96,6 +96,31 @@ Each of these was a bug once. Please don't "simplify" them back.
   the content — invisible while following, but anywhere that really scrolled it
   dragged the bottom fade's hard edge across the middle of the screen as a
   black band. Don't collapse the two elements back into one.
+- **Nothing automatic may move a clock the listener set by hand.**
+  `live.current.corrected` is set by `placeAt` and cleared by `applySong`, and
+  `resync` returns early on it. The older guard — "has the anchor changed since
+  we started measuring" — only ever caught a correction made DURING the eight
+  seconds of listening; one made before it became the baseline and was dragged
+  halfway back. That reads as "I fixed the sync and nothing happened", and it
+  hid for a long time because through a microphone the check rarely heard
+  enough to act on. Clean audio from a shared tab makes it fire nearly every
+  time.
+- **Two sliders, because there are two jobs.** The fine one spans
+  ±`NUDGE_LIMIT` seconds and writes the *persistent* calibration; the
+  whole-song one moves this song's anchor. A single whole-song slider was the
+  wrong instrument: the corrections people actually make are a second or two,
+  which on a three-minute bar is ten pixels. Don't merge them back.
+- **The fine slider writing calibration is not an accident.** Calibration sits
+  outside the anchor, so no re-check can touch it, and it carries to the next
+  song — which is right, because the error it corrects belongs to the device,
+  not to the song.
+- **Dragging state lives in a ref, not React state.** A quick tap can outrun
+  the re-render, and a pointerup that reads stale state skips the commit,
+  leaving the clock frozen wherever the press landed.
+- **Chrome's sharing banner and the pop-out's title strip cannot be removed.**
+  They are security indicators. The answer to "get rid of them" is a loopback
+  input (`src/lib/inputs.ts`): the same audio through plain `getUserMedia`,
+  with no share at all.
 - **The timeline holds the clock at the dragged position** (`scrub ?? hold`
   into `useSongClock`), which is the whole reason the lyrics follow your thumb
   instead of you having to read timecodes. Letting go re-anchors to that

@@ -6,6 +6,7 @@ import { identify, IdentifyError } from '../lib/identify';
 import { findLyrics, LyricsError, type LrclibRecord, type LyricTarget } from '../lib/lrclib';
 import { computeSungSpans, findActiveIndex, parseLrc } from '../lib/lrc';
 import { clamp, loadCalibration, saveCalibration } from '../lib/calibration';
+import { listAudioInputs, loadInput, saveInput, type AudioInput } from '../lib/inputs';
 import { primaryArtist, similarity, titleSimilarity, uniqueNames } from '../lib/translit';
 import type { AppPhase, Identification, LyricLine, SourceId, Track } from '../types';
 
@@ -136,6 +137,9 @@ export function useLiveLyrics() {
   const [pausedBy, setPausedBy] = useState<'user' | 'silence' | null>(null);
   /** What the app is listening through: the room, or this device's sound. */
   const [source, setSource] = useState<SourceId>('mic');
+  /** Which input, when the machine offers more than one worth naming. */
+  const [inputs, setInputs] = useState<AudioInput[]>([]);
+  const [inputId, setInputId] = useState<string | null>(loadInput);
   /** True while the timeline is open. */
   const [adjusting, setAdjusting] = useState(false);
   /** Where the timeline is being dragged to, or null when nobody is dragging. */
@@ -150,6 +154,9 @@ export function useLiveLyrics() {
     hold: null as number | null,
     pausedBy: null as 'user' | 'silence' | null,
     source: 'mic' as SourceId,
+    inputId: loadInput(),
+    /** The listener has moved this song's clock by hand. */
+    corrected: false,
     adjusting: false,
     scrub: null as number | null,
     calibration,
@@ -161,6 +168,8 @@ export function useLiveLyrics() {
   /** Background work: sync re-checks, listening for the next song. */
   const bgRef = useRef<AbortController | null>(null);
   const releaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Coalesces the calibration write while the fine slider is being dragged. */
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // A drag outranks a pause: while the timeline is being moved the clock shows
   // the dragged position, whatever else is holding it still.
@@ -415,6 +424,7 @@ export function useLiveLyrics() {
       set.source(want);
       micRef.current = await MicSession.open({
         source: want,
+        deviceId: live.current.inputId,
         // The meter is only on screen while listening; don't re-render the app
         // twenty times a second for a value nobody can see.
         onLevel: (l) => { if (live.current.phase === 'listening') setLevel(l); },
@@ -484,6 +494,8 @@ export function useLiveLyrics() {
     };
 
     const applySong = (top: Track, record: LrclibRecord, startedAt: number) => {
+      // A new song has never been corrected, whatever the last one needed.
+      live.current.corrected = false;
       setNotice(null);
       setCaption(null);
       setActivity(null);
@@ -559,6 +571,22 @@ export function useLiveLyrics() {
       try {
         await mic.waitUntil(from + RESYNC_SECONDS, signal);
         if (live.current.phase !== 'synced' || !live.current.synced) return;
+
+        /*
+         * Never move a clock the listener has already set by hand.
+         *
+         * The check below — has the anchor changed since we started measuring —
+         * only ever caught a correction made DURING the eight seconds of
+         * listening. A correction made before that simply became the baseline,
+         * and this then dragged it halfway back towards the recogniser's own
+         * estimate a few seconds later. From the outside that looks exactly
+         * like fixing the sync and having nothing happen, which is what it was.
+         *
+         * It went unnoticed for as long as it did because through a microphone
+         * this check usually failed to hear anything worth acting on. Give it
+         * clean audio from a shared tab and it succeeds nearly every time.
+         */
+        if (live.current.corrected) return;
 
         setActivity('checking sync');
         const before = live.current.anchor;
@@ -711,12 +739,38 @@ export function useLiveLyrics() {
       // Calibration deliberately survives: it describes this device, not this song.
     };
 
-    const nudge = (delta: number) => {
-      const next = clamp(live.current.calibration + delta);
+    /**
+     * Sets the persistent timing correction.
+     *
+     * Writing to localStorage is synchronous, and this is dragged: at sixty
+     * frames a second that is sixty blocking writes. The value is applied
+     * immediately and only the *saving* waits for the drag to settle.
+     */
+    const setNudge = (value: number) => {
+      const next = clamp(value);
       live.current.calibration = next;
       setCalibration(next);
-      saveCalibration(next);
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => saveCalibration(live.current.calibration), 400);
     };
+
+    const nudge = (delta: number) => setNudge(live.current.calibration + delta);
+
+    /**
+     * Choose which input to listen through.
+     *
+     * The open session belongs to the old device, so it is closed here rather
+     * than left to be noticed later — the next Listen opens the new one.
+     */
+    const chooseInput = (id: string | null) => {
+      live.current.inputId = id;
+      setInputId(id);
+      saveInput(id);
+      if (live.current.source === 'mic') closeMic();
+    };
+
+    /** The inputs this browser will name. Empty until permission is granted. */
+    const refreshInputs = async () => setInputs(await listAudioInputs());
 
     /**
      * Moves the clock to `at` seconds, the way choosing a line or letting go
@@ -729,8 +783,10 @@ export function useLiveLyrics() {
      * correction applied to it a second time.
      */
     const placeAt = (at: number) => {
-      // A hand correction outranks an automatic one still in flight.
+      // A hand correction outranks an automatic one still in flight, AND every
+      // automatic one that comes after it for this song.
       bgRef.current?.abort();
+      live.current.corrected = true;
       if (live.current.phase === 'paused') {
         set.hold(at);
         return;
@@ -803,13 +859,18 @@ export function useLiveLyrics() {
     const dispose = () => {
       flowRef.current?.abort();
       bgRef.current?.abort();
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveCalibration(live.current.calibration);
+      }
       clearReleaseTimer();
       micRef.current?.close();
       micRef.current = null;
     };
 
     return {
-      listen, stop, reset, nudge, seekToLine, togglePause,
+      listen, stop, reset, nudge, setNudge, seekToLine, togglePause,
+      chooseInput, refreshInputs,
       startAdjust, endAdjust, scrubTo, commitScrub,
       listenForNext, demo, dispose,
     };
@@ -821,6 +882,21 @@ export function useLiveLyrics() {
     const params = new URLSearchParams(window.location.search);
     if (!params.has('demo')) return;
     void engine.demo(params.get('demo'));
+  }, [engine]);
+
+  /*
+   * Which inputs exist, and what they are called.
+   *
+   * Names are withheld until microphone permission has been granted at least
+   * once, so the first pass usually comes back empty and the picker stays
+   * hidden. 'devicechange' is what fills it in later — it fires when
+   * permission is granted as well as when something is plugged in.
+   */
+  useEffect(() => {
+    void engine.refreshInputs();
+    const onChange = () => void engine.refreshInputs();
+    navigator.mediaDevices?.addEventListener?.('devicechange', onChange);
+    return () => navigator.mediaDevices?.removeEventListener?.('devicechange', onChange);
   }, [engine]);
 
   // Release the microphone and cancel everything on unmount.
@@ -869,6 +945,10 @@ export function useLiveLyrics() {
     stop: engine.stop,
     reset: engine.reset,
     nudge: engine.nudge,
+    setNudge: engine.setNudge,
+    inputs,
+    inputId,
+    chooseInput: engine.chooseInput,
     seekToLine: engine.seekToLine,
     togglePause: engine.togglePause,
     startAdjust: engine.startAdjust,

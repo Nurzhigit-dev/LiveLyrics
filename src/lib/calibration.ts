@@ -22,7 +22,7 @@
 const STORAGE_KEY = 'livelyrics.calibration.v2';
 
 /** Beyond a few seconds it is not calibration, it is a bad match. */
-const LIMIT = 5;
+export const NUDGE_LIMIT = 5;
 
 /**
  * One press of the fine stepper, and one press of an arrow key.
@@ -61,5 +61,5 @@ export function saveCalibration(seconds: number): void {
 
 export function clamp(seconds: number): number {
   // Rounded to avoid floating-point dust accumulating over many small nudges.
-  return Math.round(Math.max(-LIMIT, Math.min(LIMIT, seconds)) * 100) / 100;
+  return Math.round(Math.max(-NUDGE_LIMIT, Math.min(NUDGE_LIMIT, seconds)) * 100) / 100;
 }

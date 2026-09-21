@@ -98,6 +98,52 @@
   text-decoration-color: var(--c-accent-veil);
 }
 
+/* --- Choosing an input ----------------------------------------------------
+   Quiet, and only ever on screen when there is more than one input with a
+   name. It is a setup decision, not part of pressing Listen. */
+
+.stage__input {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-block-start: var(--s-3);
+  padding: var(--s-1) var(--s-2) var(--s-1) var(--s-3);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--c-line);
+  background: rgb(255 255 255 / 0.04);
+  max-inline-size: min(100%, 30rem);
+}
+
+.stage__input-name { color: var(--c-fg-dim); flex: 0 0 auto; }
+
+.stage__select {
+  min-inline-size: 0;
+  max-inline-size: 20rem;
+  padding: var(--s-2);
+  border-radius: var(--r-sm);
+  font-size: 0.8125rem;
+  color: var(--c-fg-mute);
+  cursor: pointer;
+  /* The list itself is drawn by the operating system, so its options need a
+     surface of their own — inheriting the page's transparent one leaves black
+     text on black on some platforms. */
+  background: transparent;
+}
+
+.stage__select option { background: #1B0509; color: #FFFFFF; }
+.stage__select:hover { color: var(--c-fg); }
+
+.stage__tip {
+  margin-block-start: var(--s-2);
+  max-inline-size: 40rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--c-fg-soft);
+  text-wrap: pretty;
+}
+
+.stage__tip strong { color: var(--c-accent); font-variation-settings: 'wght' 650; }
+
 /* --- Steps ----------------------------------------------------------------
    Three quiet facts, not three feature cards. */
 
@@ -135,6 +181,8 @@
 .stage__action,
 .stage__caption,
 .stage__alt,
+.stage__input,
+.stage__tip,
 .stage__step {
   animation: stage-rise var(--d-lazy) var(--e-out) backwards;
   animation-delay: calc(var(--i, 0) * 70ms);

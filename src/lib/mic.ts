@@ -235,8 +235,15 @@ export class RollingAudio {
   }
 }
 
-/** The microphone: the room, with every browser "enhancement" switched off. */
-async function openMicrophone(): Promise<MediaStream> {
+/**
+ * The microphone: the room, with every browser "enhancement" switched off.
+ *
+ * `deviceId` is how this reaches something other than the default input — an
+ * audio interface, or a loopback device carrying the computer's own sound.
+ * Requested rather than required: a remembered device that has since been
+ * unplugged should fall back to whatever is there, not fail.
+ */
+async function openMicrophone(deviceId?: string | null): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new MicError({
       code: 'mic-unavailable',
@@ -252,6 +259,7 @@ async function openMicrophone(): Promise<MediaStream> {
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false,
+        ...(deviceId ? { deviceId: { ideal: deviceId } } : {}),
       },
       video: false,
     });
@@ -336,9 +344,9 @@ export class MicSession {
     this.audio = audio;
   }
 
-  static async open(opts: MicOptions & { source?: SourceId } = {}): Promise<MicSession> {
+  static async open(opts: MicOptions & { source?: SourceId; deviceId?: string | null } = {}): Promise<MicSession> {
     const source = opts.source ?? 'mic';
-    const stream = source === 'device' ? await openShare() : await openMicrophone();
+    const stream = source === 'device' ? await openShare() : await openMicrophone(opts.deviceId);
 
     // The device's own rate. Forcing 8 kHz here throws in Firefox; the
     // conversion happens afterwards instead (see toRecognitionWav).

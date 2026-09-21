@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import type { LyricLine } from '../types';
 import { formatTime } from '../lib/time';
-import { NUDGE_STEP } from '../lib/calibration';
+import { NUDGE_LIMIT, NUDGE_STEP } from '../lib/calibration';
 import './SyncBar.css';
 
 interface Props {
@@ -9,35 +9,26 @@ interface Props {
   duration: number;
   /** Where the clock is — the live position, or the drag while dragging. */
   position: number;
-  /** Every line's timestamp, drawn as marks along the track. */
+  /** Every line's timestamp, drawn as marks along the jump track. */
   lines: LyricLine[];
-  /** The persistent fine correction, and the way to change it. */
+  /** The persistent fine correction, and the two ways to change it. */
   nudge: number;
   onNudge: (delta: number) => void;
-  /** Called continuously while dragging. */
+  onSetNudge: (value: number) => void;
+  /** Called continuously while dragging the jump track. */
   onScrub: (seconds: number) => void;
-  /** Called when the drag ends: this position is where the song is now. */
+  /** Called when that drag ends: this position is where the song is now. */
   onCommit: () => void;
   onClose: () => void;
 }
 
-/** One arrow press on the track. Shift makes it five. */
-const STEP_SECONDS = 1;
-const BIG_STEP_SECONDS = 5;
-
 /** Past this many lines the marks stop being information and become texture. */
 const MAX_TICKS = 140;
 
+/** Close enough to the middle to mean "none": lets you find zero by feel. */
+const SNAP = 0.08;
+
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
-
-/** A drag smaller than this was a tap, and not worth reporting as a move. */
-const MOVE_FLOOR = 0.2;
-
-/** How far the last drag moved the song, in words rather than a signed number. */
-function describeMove(seconds: number): string {
-  const size = Math.abs(seconds).toFixed(1);
-  return `moved ${size}s ${seconds < 0 ? 'earlier' : 'later'}`;
-}
 
 /* Marks never change while a song is on screen, so they are their own
    memoised component — otherwise a hundred of them would be reconciled on
@@ -59,186 +50,219 @@ const Ticks = memo(function Ticks({ lines, duration }: { lines: LyricLine[]; dur
 });
 
 /**
- * The timeline.
+ * Putting the lyrics back in step, with two controls for two different jobs.
  *
- * This replaced a list of lines you tapped one of. Tapping a line was precise
- * but it was also a leap: you had to read the list, find the words you could
- * hear, and commit — and if you were out by a verse you scrolled, hunted, and
- * tried again. Dragging is the ordinary gesture for "the song is further
- * along than you think", and because the clock is held at the dragged
- * position, the lyrics *behind* this bar move with it. So you do not read
- * timecodes at all: you drag until the line on screen is the one in the room,
- * and let go.
+ * The first version of this was one slider spanning the whole song, and it was
+ * the wrong instrument. Almost every correction anyone actually needs is a
+ * second or two — which, on a bar three minutes wide, is about ten pixels.
+ * Asking someone to land a two-second fix by dragging ten pixels is asking
+ * them to move a pin ten metres using a map of the world.
+ *
+ * So the control you reach for first spans ten seconds, not three minutes:
+ * roughly a fiftieth of the travel per second, and the lyrics move under your
+ * thumb as you drag. It also writes to the *persistent* correction rather than
+ * to this song's anchor, which means two things — it is remembered for every
+ * song after this one, and no background re-check can undo it, because those
+ * only ever move the anchor.
+ *
+ * The whole-song bar is still here, one row down and half the height, for the
+ * other job: being on completely the wrong part of the track because the
+ * recogniser matched the wrong repeat of a chorus.
  */
 export function SyncBar({
-  duration, position, lines, nudge, onNudge, onScrub, onCommit, onClose,
+  duration, position, lines, nudge, onNudge, onSetNudge, onScrub, onCommit, onClose,
 }: Props) {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const [dragging, setDragging] = useState(false);
+  const fineRef = useRef<HTMLDivElement>(null);
+  const jumpRef = useRef<HTMLDivElement>(null);
+
   /*
-   * Where the drag started, and how far the last one carried the song.
+   * Which track is being dragged, in a ref rather than state.
    *
-   * Measured per drag, not from when the panel opened. The first version
-   * compared against the position at open, which meant the readout climbed on
-   * its own — the song keeps playing while the panel is up, so after twenty
-   * seconds of doing nothing it claimed the lyrics had been moved twenty
-   * seconds. What anyone wants to know is how far the correction they just
-   * made actually went.
+   * The pointerup handler has to know a drag was in progress, and reading that
+   * from state means reading whatever the last render captured. A quick tap
+   * can outrun the re-render, and the handler would then skip the commit —
+   * leaving the clock frozen at wherever the press landed.
    */
-  const dragFrom = useRef(0);
-  const [moved, setMoved] = useState<number | null>(null);
+  const dragging = useRef<'fine' | 'jump' | null>(null);
+  const [active, setActive] = useState<'fine' | 'jump' | null>(null);
 
-  const secondsAt = useCallback(
-    (clientX: number) => {
-      const rect = trackRef.current?.getBoundingClientRect();
-      if (!rect || rect.width === 0) return 0;
-      return clamp01((clientX - rect.left) / rect.width) * duration;
-    },
-    [duration],
-  );
+  const ratioAt = (el: HTMLElement | null, clientX: number) => {
+    const rect = el?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return 0;
+    return clamp01((clientX - rect.left) / rect.width);
+  };
 
-  const onPointerDown = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      // Capture, so a drag that wanders off the bar — or off the window —
-      // keeps being this bar's drag and still ends in a pointerup here.
-      event.currentTarget.setPointerCapture(event.pointerId);
-      dragFrom.current = position;
-      setDragging(true);
-      onScrub(secondsAt(event.clientX));
-    },
-    [onScrub, secondsAt, position],
-  );
+  /* ---- fine: the persistent correction, ±NUDGE_LIMIT seconds ------------ */
 
-  const onPointerMove = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (!dragging) return;
-      onScrub(secondsAt(event.clientX));
-    },
-    [dragging, onScrub, secondsAt],
-  );
+  const fineAt = useCallback((clientX: number) => {
+    const value = (ratioAt(fineRef.current, clientX) - 0.5) * 2 * NUDGE_LIMIT;
+    return Math.abs(value) < SNAP ? 0 : value;
+  }, []);
 
-  const endDrag = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (!dragging) return;
-      setDragging(false);
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-      setMoved(position - dragFrom.current);
-      onCommit();
-    },
-    [dragging, onCommit, position],
-  );
+  const fineDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragging.current = 'fine';
+    setActive('fine');
+    onSetNudge(fineAt(event.clientX));
+  }, [fineAt, onSetNudge]);
 
-  /** Arrows move the song itself; the stepper beside it moves the correction. */
-  const onKeyDown = useCallback(
-    (event: React.KeyboardEvent) => {
-      const step = event.shiftKey ? BIG_STEP_SECONDS : STEP_SECONDS;
-      let next: number | null = null;
+  const fineMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragging.current !== 'fine') return;
+    onSetNudge(fineAt(event.clientX));
+  }, [fineAt, onSetNudge]);
 
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') next = position - step;
-      else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') next = position + step;
-      else if (event.key === 'PageDown') next = position - BIG_STEP_SECONDS * 2;
-      else if (event.key === 'PageUp') next = position + BIG_STEP_SECONDS * 2;
-      else if (event.key === 'Home') next = 0;
-      else if (event.key === 'End') next = duration;
-      else return;
+  /* ---- jump: this song's position, the whole track ---------------------- */
 
-      event.preventDefault();
-      const to = Math.min(duration, Math.max(0, next));
-      onScrub(to);
-      setMoved(to - position);
-      // Committed on each press rather than on release: from a keyboard there
-      // is no release, and holding the key would otherwise freeze the clock.
-      onCommit();
-    },
-    [position, duration, onScrub, onCommit],
-  );
+  const jumpDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragging.current = 'jump';
+    setActive('jump');
+    onScrub(ratioAt(jumpRef.current, event.clientX) * duration);
+  }, [duration, onScrub]);
 
-  const pct = duration > 0 ? clamp01(position / duration) * 100 : 0;
+  const jumpMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragging.current !== 'jump') return;
+    onScrub(ratioAt(jumpRef.current, event.clientX) * duration);
+  }, [duration, onScrub]);
+
+  /** Both tracks end the same way; only the jump has anything to commit. */
+  const endDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const was = dragging.current;
+    if (!was) return;
+    dragging.current = null;
+    setActive(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (was === 'jump') onCommit();
+  }, [onCommit]);
+
+  const fineKeys = useCallback((event: React.KeyboardEvent) => {
+    const step = event.shiftKey ? NUDGE_STEP * 4 : NUDGE_STEP;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') onNudge(-step);
+    else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') onNudge(step);
+    else if (event.key === 'Home') onSetNudge(0);
+    else return;
+    event.preventDefault();
+  }, [onNudge, onSetNudge]);
+
+  const jumpKeys = useCallback((event: React.KeyboardEvent) => {
+    const step = event.shiftKey ? 15 : 5;
+    let next: number | null = null;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') next = position - step;
+    else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') next = position + step;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = duration;
+    else return;
+    event.preventDefault();
+    onScrub(Math.min(duration, Math.max(0, next)));
+    // No release from a keyboard, so each press commits on its own.
+    onCommit();
+  }, [position, duration, onScrub, onCommit]);
+
+  const finePct = ((nudge + NUDGE_LIMIT) / (NUDGE_LIMIT * 2)) * 100;
+  const jumpPct = duration > 0 ? clamp01(position / duration) * 100 : 0;
+  const offset = nudge === 0 ? '0.00' : `${nudge > 0 ? '+' : '−'}${Math.abs(nudge).toFixed(2)}`;
 
   return (
-    <section className="syncbar" aria-label="Move the lyrics to where the song is">
+    <section className="syncbar" aria-label="Put the lyrics back in step">
       <header className="syncbar__head">
-        <p className="syncbar__hint">
-          Drag until the words on screen are the ones you can hear
-        </p>
+        <p className="syncbar__hint">Drag until the words on screen are the ones you can hear</p>
         <button type="button" className="syncbar__done" onClick={onClose}>Done</button>
       </header>
 
+      {/* --- the one you want, almost always --- */}
       <div className="syncbar__row">
-        <span className="readout syncbar__time" aria-hidden="true">{formatTime(position)}</span>
+        <button
+          type="button"
+          className="syncbar__step"
+          onClick={() => onNudge(-NUDGE_STEP)}
+          aria-label="Lyrics a quarter second earlier"
+        >
+          <Chevron dir="back" />
+        </button>
 
         <div
-          ref={trackRef}
-          className="syncbar__track"
-          data-dragging={dragging || undefined}
+          ref={fineRef}
+          className="syncbar__fine"
+          data-dragging={active === 'fine' || undefined}
           role="slider"
           tabIndex={0}
+          aria-label="Shift the lyrics"
+          aria-valuemin={-NUDGE_LIMIT}
+          aria-valuemax={NUDGE_LIMIT}
+          aria-valuenow={nudge}
+          aria-valuetext={nudge === 0 ? 'in step' : `${offset} seconds`}
+          onPointerDown={fineDown}
+          onPointerMove={fineMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onKeyDown={fineKeys}
+        >
+          <span className="syncbar__rail" aria-hidden="true" />
+          {/* Zero, marked, so it can be found by eye and by feel. */}
+          <span className="syncbar__zero" aria-hidden="true" />
+          <span
+            className="syncbar__fill"
+            style={{ insetInlineStart: `${Math.min(50, finePct)}%`, inlineSize: `${Math.abs(finePct - 50)}%` }}
+            aria-hidden="true"
+          />
+          <span className="syncbar__handle" style={{ insetInlineStart: `${finePct}%` }} aria-hidden="true" />
+          <span className="syncbar__end syncbar__end--start" aria-hidden="true">earlier</span>
+          <span className="syncbar__end syncbar__end--end" aria-hidden="true">later</span>
+        </div>
+
+        <button
+          type="button"
+          className="syncbar__step"
+          onClick={() => onNudge(NUDGE_STEP)}
+          aria-label="Lyrics a quarter second later"
+        >
+          <Chevron dir="forward" />
+        </button>
+
+        <span className="syncbar__readout">
+          <span className="readout syncbar__value" aria-live="polite" data-offset={nudge !== 0 || undefined}>
+            {offset}
+          </span>
+          <span className="syncbar__unit" aria-hidden="true">shift</span>
+        </span>
+      </div>
+
+      {/* --- and the one for being on the wrong verse entirely --- */}
+      <div className="syncbar__jump">
+        <span className="syncbar__label">Wrong part?</span>
+
+        <div
+          ref={jumpRef}
+          className="syncbar__track"
+          data-dragging={active === 'jump' || undefined}
+          role="slider"
+          tabIndex={0}
+          aria-label="Position in the song"
           aria-valuemin={0}
           aria-valuemax={Math.round(duration)}
           aria-valuenow={Math.round(position)}
           aria-valuetext={`${formatTime(position)} of ${formatTime(duration)}`}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
+          onPointerDown={jumpDown}
+          onPointerMove={jumpMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
-          onKeyDown={onKeyDown}
+          onKeyDown={jumpKeys}
         >
           <span className="syncbar__rail" aria-hidden="true" />
-          <span className="syncbar__fill" style={{ inlineSize: `${pct}%` }} aria-hidden="true" />
-          {/* Over the fill, not under it. Beneath, every mark in the part of
-              the song already played was hidden — which is half the bar, and
-              the half you are usually dragging back into. */}
+          <span className="syncbar__played" style={{ inlineSize: `${jumpPct}%` }} aria-hidden="true" />
+          {/* Over the fill, not under it: beneath, every mark in the part
+              already played was hidden, and that is the half you drag back
+              into. */}
           <Ticks lines={lines} duration={duration} />
-          <span className="syncbar__handle" style={{ insetInlineStart: `${pct}%` }} aria-hidden="true" />
+          <span className="syncbar__handle syncbar__handle--small" style={{ insetInlineStart: `${jumpPct}%` }} aria-hidden="true" />
         </div>
 
-        <span className="readout syncbar__time syncbar__time--end" aria-hidden="true">
-          {formatTime(duration)}
+        <span className="readout syncbar__time">
+          {formatTime(position)} / {formatTime(duration)}
         </span>
       </div>
-
-      <footer className="syncbar__foot">
-        <span
-          className="label syncbar__delta"
-          data-moved={(moved !== null && Math.abs(moved) >= MOVE_FLOOR) || undefined}
-          aria-live="polite"
-        >
-          {/* Empty until something has actually been moved. The instruction
-              is already at the top of the panel, and repeating it here only
-              earned an ellipsis on a phone. */}
-          {moved !== null && Math.abs(moved) >= MOVE_FLOOR ? describeMove(moved) : ''}
-        </span>
-
-        {/* The fine, persistent correction. It lives here rather than in the
-            transport bar because it is the same job as the track above it —
-            one coarse and for this song, one small and for this device. */}
-        <div className="syncbar__fine" role="group" aria-label="Fine timing correction">
-          <button
-            type="button"
-            className="syncbar__step"
-            onClick={() => onNudge(-NUDGE_STEP)}
-            aria-label="Lyrics a quarter second earlier"
-          >
-            <Chevron dir="back" />
-          </button>
-          <span className="syncbar__readout">
-            <span className="readout syncbar__value" aria-live="polite" data-offset={nudge !== 0 || undefined}>
-              {nudge === 0 ? '0.00' : `${nudge > 0 ? '+' : '−'}${Math.abs(nudge).toFixed(2)}`}
-            </span>
-            <span className="syncbar__unit" aria-hidden="true">fine</span>
-          </span>
-          <button
-            type="button"
-            className="syncbar__step"
-            onClick={() => onNudge(NUDGE_STEP)}
-            aria-label="Lyrics a quarter second later"
-          >
-            <Chevron dir="forward" />
-          </button>
-        </div>
-      </footer>
     </section>
   );
 }

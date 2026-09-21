@@ -180,6 +180,9 @@ export default function App() {
           onListen={toggleListen}
           onListenToDevice={listenToDevice}
           canUseDevice={lyrics.canUseDevice}
+          inputs={lyrics.inputs}
+          inputId={lyrics.inputId}
+          onChooseInput={lyrics.chooseInput}
           listening={busy}
           phase={phase}
           source={lyrics.source}
@@ -236,6 +239,7 @@ export default function App() {
           lines={lyrics.lines}
           nudge={lyrics.calibration}
           onNudge={nudge}
+          onSetNudge={lyrics.setNudge}
           onScrub={lyrics.scrubTo}
           onCommit={lyrics.commitScrub}
           onClose={lyrics.endAdjust}

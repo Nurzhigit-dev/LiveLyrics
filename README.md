@@ -55,7 +55,7 @@ After that it keeps listening, quietly:
 - **Listen to this computer instead of the room** — share the tab your music is in and the recogniser gets the audio as it was made, not re-recorded off a speaker
 - **Pop the lyrics out** into a small window that floats over everything else, so you can watch the video and read along
 - **Pause and resume**, by button or the space bar, holding the lyrics exactly where they were
-- **Adjust**: a timeline you drag until the words on screen are the ones you can hear — the lyrics follow the drag as you make it, so there is nothing to read off and nothing to work out
+- **Adjust**: drag until the words on screen are the ones you can hear — a ten-second fine shift for the correction you almost always need, and the whole song underneath for the times you are on the wrong verse entirely
 - **Read along in Russian or English**, whatever the song is sung in, and tap any word for what it means — see [Studying English with it](#studying-english-with-it)
 - **Word-by-word highlighting**, paced to each song's own tempo rather than smeared across instrumental breaks
 - **Russian and Kazakh songs** match even when the recogniser and the lyric database spell the names in different scripts: `Zemfira` finds `Земфира`
@@ -93,6 +93,28 @@ simply not offered there rather than offered and broken. On Windows you can
 also share your whole screen with **system audio** and catch sound from
 outside the browser entirely; macOS only allows tab audio.
 
+### Without the sharing banner
+
+Sharing a tab makes Chrome put a banner across the top of it, and there is no
+way for this app to remove that — it is a security indicator, and a page being
+able to hide the fact that it is recording would be the whole problem such
+indicators exist to prevent. The same goes for the strip along the top of the
+floating window.
+
+There is, though, a way to not need the share at all. Many sound cards expose
+a **loopback input** — Windows calls it *Stereo Mix*, some Realtek drivers say
+*What U Hear*, and virtual cables (VB-Audio, VoiceMeeter, BlackHole) add one
+to any machine. To a browser that is just a microphone. Pick it under **Listen
+through** on the front screen and you get exactly what a tab share gets — this
+computer's own sound, clean — with no banner, no picker, and nothing beyond
+the microphone permission the app already asks for.
+
+Whether you have one depends on your sound hardware. If the list shows only
+your actual microphone, your card does not expose it, and a virtual cable is
+the way to add one. The picker itself only appears once the browser will tell
+the page what the inputs are called, which is after microphone permission has
+been granted at least once.
+
 Nothing is recorded or kept, and the video half of the share is never looked
 at — the API refuses to hand over audio without it, so it is capped at one
 frame a second and dropped on the floor.
@@ -128,6 +150,9 @@ One thing this needed underneath: **a browser stops giving a hidden tab
 animation frames**, so the moment you switch to YouTube the clock would freeze
 and the lyrics with it. The pop-out window is visible even when the tab isn't,
 so the app takes its heartbeat from whichever window is actually on screen.
+
+The strip along its top with the site's name on it is Chrome's own, and cannot
+be removed for the same reason the sharing banner cannot.
 
 Chrome and Edge only, again — it's the Document Picture-in-Picture API, and
 there is no honest way to fake it elsewhere.
@@ -344,6 +369,10 @@ repository, not even as test data — and the whole thing is behind
 **The lyric reel moves by `transform`, and nothing blurs the text.** Transforms are animated by the compositor, off the main thread. Animating a `filter` on text would re-rasterise every glyph on every frame, so all the softness lives in the background instead.
 
 **The edge fades hang off a frame, not off the scroller.** They used to be children of the scrolling element, and an absolutely positioned child of a scroll container is placed against its *unscrolled* box — so both fades travelled with the content. Nothing showed while following, because nothing scrolls there. But in anything that really scrolled, the bottom fade's hard lower edge was dragged into the middle of the screen: a black band lying across the lyrics that looked like a rendering fault. The scrolling now happens one element in, and the fades are positioned against an outer frame that cannot scroll.
+
+**A correction made by hand is never undone by one made automatically.** The confirming re-check that runs shortly after a match used to compare against whatever the anchor was when it *started measuring* — so a correction made before that simply became the new baseline, and the check then dragged it halfway back towards the recogniser's own estimate a few seconds later. From the outside that looks exactly like fixing the sync and having nothing happen, which is what it was. It hid for as long as it did because through a microphone that check usually heard nothing worth acting on; give it clean audio from a shared tab and it succeeds nearly every time.
+
+**One slider spanning the whole song was the wrong instrument.** Almost every correction anyone actually needs is a second or two, and on a bar three minutes wide that is about ten pixels — asking someone to land a two-second fix by moving ten pixels is asking them to move a pin ten metres using a map of the world. The control you reach for first now spans ten seconds instead, roughly a fiftieth of the travel per second. It also writes to the *persistent* correction rather than to this song's anchor, which means it is remembered for every song afterwards and no background re-check can reach it. The whole-song bar is still there, one row down and half the height, for the other job: being on completely the wrong part of the track.
 
 **Fixing the sync is a drag, not a choice from a list.** The first version of this was a scrollable list of every line with its timestamp, and you tapped the one you could hear. It was precise and it was hard work: you had to read a list of lines you didn't recognise, find the words, and commit — and being out by a verse meant scrolling, hunting and trying again. The timeline is the ordinary gesture for "the song is further along than you think", and the trick that makes it work is that the clock is *held* at the dragged position, so the lyrics behind the panel move with your thumb. You never read a timecode. You drag until the line on screen is the line in the room, and let go.
 

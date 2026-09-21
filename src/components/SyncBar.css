@@ -1,15 +1,19 @@
 /* ============================================================================
-   The timeline.
+   Putting the lyrics back in step.
 
    A row in the app's column, between the lyrics and the transport bar, not a
    sheet floating over them — the lyrics are what you are reading while you
    drag, and a panel on top of them would hide the one thing the drag is for.
+
+   Two tracks, and their sizes say which is which: the fine one spans ten
+   seconds and is the height of a control you grab; the whole-song one is half
+   that and sits underneath, for the rarer job.
    ========================================================================== */
 
 .syncbar {
   flex: 0 0 auto;
   z-index: var(--z-bar);
-  padding: var(--s-3) var(--gutter-end) var(--s-4) var(--gutter);
+  padding: var(--s-3) var(--gutter-end) var(--s-3) var(--gutter);
   border-block-start: 1px solid var(--c-line);
   background: rgb(26 7 11 / 0.72);
   backdrop-filter: blur(18px) saturate(140%);
@@ -28,7 +32,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--s-4);
-  margin-block-end: var(--s-2);
+  margin-block-end: var(--s-1);
 }
 
 .syncbar__hint {
@@ -58,37 +62,49 @@
 .syncbar__done:hover  { background: var(--c-accent-hi); }
 .syncbar__done:active { transform: scale(0.96); }
 
-/* --- The track ------------------------------------------------------------ */
+/* --- The fine shift ------------------------------------------------------- */
 
 .syncbar__row {
   display: flex;
   align-items: center;
-  gap: var(--s-3);
+  gap: var(--s-2);
 }
 
-.syncbar__time {
+.syncbar__step {
+  display: grid;
+  place-items: center;
   flex: 0 0 auto;
-  font-size: 0.75rem;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  border-radius: var(--r-pill);
   color: var(--c-fg-mute);
-  min-inline-size: 3ch;
+  transition:
+    color      var(--d-fast) var(--e-out),
+    background var(--d-fast) var(--e-out),
+    transform  var(--d-fast) var(--e-spring);
 }
 
-.syncbar__time--end { color: var(--c-fg-dim); }
+.syncbar__step:hover  { color: var(--c-accent); background: var(--c-accent-veil); }
+.syncbar__step:active { transform: scale(0.88); }
 
 /*
- * A generous hit area around a slim rail: the rail is what you see, the box
- * is what you can grab. `touch-action: none` is what stops a drag on a phone
- * from being taken by the page as a scroll before this ever sees it.
+ * A generous hit area around a slim rail: the rail is what you see, the box is
+ * what you can grab. `touch-action: none` is what stops a drag on a phone from
+ * being taken by the page as a scroll before this ever sees it.
  */
+.syncbar__fine,
 .syncbar__track {
   position: relative;
   flex: 1 1 auto;
-  block-size: 2.75rem;
   cursor: pointer;
   touch-action: none;
   border-radius: var(--r-md);
 }
 
+.syncbar__fine { block-size: 2.75rem; }
+.syncbar__track { block-size: 1.75rem; }
+
+.syncbar__fine:focus-visible,
 .syncbar__track:focus-visible {
   outline: var(--ring) solid var(--c-accent);
   outline-offset: 2px;
@@ -96,6 +112,7 @@
 
 .syncbar__rail,
 .syncbar__fill,
+.syncbar__played,
 .syncbar__ticks {
   position: absolute;
   inset-block-start: 50%;
@@ -105,28 +122,50 @@
   pointer-events: none;
 }
 
+.syncbar__track .syncbar__rail,
+.syncbar__track .syncbar__played,
+.syncbar__track .syncbar__ticks { block-size: 4px; }
+
 .syncbar__rail {
   inset-inline: 0;
   background: rgb(255 255 255 / 0.12);
 }
 
+/* Zero. The one place on the fine track worth being able to find without
+   reading a number. */
+.syncbar__zero {
+  position: absolute;
+  inset-block: 0.6rem;
+  inset-inline-start: 50%;
+  inline-size: 2px;
+  margin-inline-start: -1px;
+  border-radius: var(--r-pill);
+  background: rgb(255 255 255 / 0.3);
+  pointer-events: none;
+}
+
+/* Grows out from the middle rather than from the left: the fine track is a
+   correction either side of nothing, not a quantity from zero. */
+.syncbar__fill {
+  background: linear-gradient(90deg, var(--c-accent-deep), var(--c-accent));
+  box-shadow: 0 0 12px var(--c-accent-glow);
+}
+
+.syncbar__played {
+  inset-inline-start: 0;
+  background: linear-gradient(90deg, var(--c-accent-deep), var(--c-accent));
+  opacity: 0.75;
+}
+
 .syncbar__ticks { inset-inline: 0; overflow: hidden; }
 
-/* One mark per sung line. Not decoration: it is what turns an empty bar into
-   a shape you can aim at — the clusters are verses, the gaps are the breaks
-   between them. Bright enough to read over the accent fill as well as over
-   the dark rail, because it has to sit on top of both. */
+/* One mark per sung line: the clusters are verses, the gaps the breaks
+   between them, which is what turns an empty bar into a shape you can aim at. */
 .syncbar__tick {
   position: absolute;
   inset-block: 0;
   inline-size: 1px;
   background: rgb(255 255 255 / 0.45);
-}
-
-.syncbar__fill {
-  inset-inline-start: 0;
-  background: linear-gradient(90deg, var(--c-accent-deep), var(--c-accent));
-  box-shadow: 0 0 12px var(--c-accent-glow);
 }
 
 .syncbar__handle {
@@ -143,65 +182,41 @@
   transition: scale var(--d-fast) var(--e-spring);
 }
 
+.syncbar__handle--small {
+  inline-size: 0.8rem;
+  block-size: 0.8rem;
+  margin-inline-start: -0.4rem;
+  box-shadow: 0 0 0 3px rgb(26 7 11 / 0.8), 0 1px 6px rgb(0 0 0 / 0.5);
+}
+
+.syncbar__fine[data-dragging] .syncbar__handle,
 .syncbar__track[data-dragging] .syncbar__handle { scale: 1.2; }
+.syncbar__fine:hover .syncbar__handle,
 .syncbar__track:hover .syncbar__handle { scale: 1.1; }
 
-/* --- Foot ----------------------------------------------------------------- */
-
-.syncbar__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s-4);
-  margin-block-start: var(--s-1);
-}
-
-.syncbar__delta {
+/* Which way is which, written on the track rather than left to be guessed. */
+.syncbar__end {
+  position: absolute;
+  inset-block-end: 0.15rem;
+  font-family: var(--f-mono);
+  font-size: 0.5625rem;
+  letter-spacing: var(--tr-label);
+  text-transform: uppercase;
   color: var(--c-fg-dim);
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 0.75rem;
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  pointer-events: none;
 }
 
-.syncbar__delta[data-moved] { color: var(--c-accent); }
+.syncbar__end--start { inset-inline-start: 0; }
+.syncbar__end--end   { inset-inline-end: 0; }
 
-/* --- The fine stepper ----------------------------------------------------- */
-
-.syncbar__fine {
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
-  background: rgb(255 255 255 / 0.07);
-  border: 1px solid var(--c-line);
-  border-radius: var(--r-pill);
-  padding: 2px;
-}
-
-.syncbar__step {
-  display: grid;
-  place-items: center;
-  inline-size: 2.25rem;
-  block-size: 2.25rem;
-  border-radius: var(--r-pill);
-  color: var(--c-fg-mute);
-  transition:
-    color      var(--d-fast) var(--e-out),
-    background var(--d-fast) var(--e-out),
-    transform  var(--d-fast) var(--e-spring);
-}
-
-.syncbar__step:hover  { color: var(--c-accent); background: var(--c-accent-veil); }
-.syncbar__step:active { transform: scale(0.88); }
+/* --- The readout ---------------------------------------------------------- */
 
 .syncbar__readout {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
   min-inline-size: 3.5rem;
   line-height: 1.1;
 }
@@ -223,14 +238,34 @@
   color: var(--c-fg-dim);
 }
 
+/* --- The whole song ------------------------------------------------------- */
+
+.syncbar__jump {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-block-start: var(--s-1);
+}
+
+.syncbar__label,
+.syncbar__time {
+  flex: 0 0 auto;
+  font-size: 0.6875rem;
+  color: var(--c-fg-dim);
+  white-space: nowrap;
+}
+
+.syncbar__label { font-family: var(--f-mono); letter-spacing: 0.04em; }
+
 /* --- Responsive ----------------------------------------------------------- */
 
 @media (max-width: 599px) {
   .syncbar { padding-inline: var(--s-4); }
-  /* The instruction is the first thing read and the last thing needed; on a
-     phone the bar itself has to keep the width. */
   .syncbar__hint { white-space: normal; font-size: 0.75rem; }
-  .syncbar__time--end { display: none; }
+  /* The words on the fine track are the first thing to give up: the chevrons
+     either side already say which way each end goes. */
+  .syncbar__end { display: none; }
+  .syncbar__label { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

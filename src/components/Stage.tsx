@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import { ListenButton } from './ListenButton';
 import type { AppPhase, SourceId } from '../types';
+import type { AudioInput } from '../lib/inputs';
 import './Stage.css';
 
 /** What the caption under the button says at each stage of the pipeline. */
@@ -35,6 +36,10 @@ interface Props {
   onListenToDevice?: () => void;
   /** False where the browser has no screen-sharing API to offer. */
   canUseDevice?: boolean;
+  /** Inputs this browser will name. Empty until microphone permission exists. */
+  inputs?: AudioInput[];
+  inputId?: string | null;
+  onChooseInput?: (id: string | null) => void;
   listening: boolean;
   phase: AppPhase;
   source: SourceId;
@@ -53,8 +58,10 @@ interface Props {
  */
 export function Stage({
   onListen, onListenToDevice, canUseDevice = false,
+  inputs = [], inputId = null, onChooseInput,
   listening, phase, source, level, caption: override,
 }: Props) {
+  const loopback = inputs.find((d) => d.loopback);
   const caption = override ?? CAPTION[source][phase];
   const delay = (i: number) => ({ '--i': i }) as CSSProperties;
 
@@ -99,11 +106,48 @@ export function Stage({
             Playing on this computer? Use its sound instead
           </button>
         )}
+
+        {/*
+          Which input to listen through.
+
+          Hidden until there is a real choice to make — before microphone
+          permission has ever been granted the browser will not say what any of
+          them are called, and a list of "Microphone 1, Microphone 2" is worse
+          than no list.
+
+          It is here rather than buried in a settings panel because of what a
+          loopback input does: it is this computer's own sound arriving as an
+          ordinary microphone, which is the one way to get what a tab share
+          gets without the banner a tab share puts across your screen.
+        */}
+        {!listening && inputs.length > 1 && onChooseInput && (
+          <label className="stage__input" style={delay(6)}>
+            <span className="label stage__input-name">Listen through</span>
+            <select
+              className="stage__select"
+              value={inputId ?? ''}
+              onChange={(event) => onChooseInput(event.target.value || null)}
+            >
+              <option value="">Default input</option>
+              {inputs.map((device) => (
+                <option key={device.id} value={device.id}>
+                  {device.label}{device.loopback ? ' — this computer' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {!listening && loopback && inputId !== loopback.id && (
+          <p className="stage__tip" style={delay(7)}>
+            <strong>{loopback.label}</strong> is this computer’s own sound, with no sharing banner
+          </p>
+        )}
       </div>
 
       <ol className="stage__steps" aria-label="How it works">
         {STEPS.map((step, i) => (
-          <li key={step.name} className="stage__step" style={delay(6 + i)}>
+          <li key={step.name} className="stage__step" style={delay(8 + i)}>
             <span className="stage__step-name">{step.name}</span>
             <span className="stage__step-detail">{step.detail}</span>
           </li>
