@@ -10,6 +10,7 @@ const PHASE_LABEL: Record<AppPhase, string> = {
   synced: 'in sync',
   paused: 'music stopped',
   nomatch: 'no match',
+  waiting: 'waiting for the next song',
   error: 'error',
 };
 

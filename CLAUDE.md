@@ -19,8 +19,8 @@ There are no unit tests. Things are verified by running them: server logic with
 small Node scripts, browser logic by importing modules in the browser pane
 (`await import('/src/lib/…')`) and driving them with synthetic audio.
 
-**For anything on screen after a match, use `?demo`** — `?demo`, `?demo=ru` or
-`?demo=kk` in `npm run dev` opens straight into the synced view with an
+**For anything on screen after a match, use `?demo`** — `?demo`, `?demo=ru`,
+`?demo=kk` or `?demo=waiting` in `npm run dev` opens straight into the synced view with an
 invented song playing. Without it the lyric reel, the timeline, the word
 highlight and the translations can only be reached by playing real music at a
 real microphone. It lives in `src/lib/demo.ts`, is imported dynamically behind
@@ -127,6 +127,20 @@ Each of these was a bug once. Please don't "simplify" them back.
   instant. It replaced a list of lines you tapped one of; don't bring the list
   back as "precision" — the drag is precise, because you are matching what you
   can hear, not what you can read.
+- **A song it can't use never ends the session** — `keepListening` holds the
+  microphone and waits the track out. The thing to protect here is the monthly
+  recognition quota: listening to the SAME song again cannot give a different
+  answer, so an identification is only worth spending after the track has
+  changed. Silence is one free signal that it has; `untilEndOf` is the other,
+  and is exact whenever the recogniser named the track. The 90-second timer is
+  only the fallback for a change with neither. Don't shorten it, and don't add
+  a poll.
+- **Every recognition in that loop must teach it something.** Even one that
+  comes back as the same unusable song carries a fresh duration and offset, so
+  the next wait is exactly what is left of the track rather than another guess.
+- **`isSongSpecific` is what separates the two kinds of failure.** No match, no
+  lyrics, nothing playing — a different song might work, so wait. A rejected
+  key, an exhausted quota, a dead microphone — waiting would only repeat it.
 - **Nothing that identifies may fire while `adjusting` or `scrub` is set.**
   Scrubbing to the end of a track looks exactly like the track finishing, and
   `listenForNext` would spend a recognition on a song that is still playing.
@@ -268,6 +282,10 @@ directly. Sync accuracy in a real room is the open question.
 Also unverified: how the two translators behave once the day's allowance is
 actually spent. The quota path is written from their documented responses, not
 from having hit it.
+
+Nor the waiting loop end to end: the browser pane has no microphone, so only
+its screen has been seen (?demo=waiting). The loop, the wake on silence and
+the untilEndOf timing are unexercised.
 
 And the floating window itself. The browser pane inside the Claude desktop app
 reports `documentPictureInPicture` and then refuses to open one ("Internal

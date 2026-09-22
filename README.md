@@ -47,6 +47,7 @@ After that it keeps listening, quietly:
 - **It double-checks itself.** Shortly after a match it takes a second measurement and corrects the timing. That also catches a first match that landed on the wrong repeat of a chorus.
 - **It won't show a guess.** The recogniser scores matches from 70 to 100. Anything below 85 is only shown if a second, later listen names the same song.
 - **It follows you to the next song.** When a track ends, or the room changes song while paused, it identifies the new one and swaps the lyrics over.
+- **A song it can't use doesn't end the session.** No match, or no lyrics on file, and it keeps the microphone open and waits the track out — then picks up whatever comes next on its own. See [When a song can't be used](#when-a-song-cant-be-used).
 
 ---
 
@@ -64,6 +65,37 @@ After that it keeps listening, quietly:
 - **Click any line** to re-anchor the sync to that exact moment
 - **Nothing to sign up for**: visitors need no account and no keys
 - **Fully keyboard accessible**, with reduced-motion support throughout
+
+---
+
+## When a song can't be used
+
+Some tracks can't be followed: the recogniser doesn't know them, or it does
+and LRCLIB has no words on file. That used to be the end of the session — an
+explanation and a button to press.
+
+Now it waits. The microphone stays open, the screen says what happened and
+that it is **still listening**, and when the track changes it picks up the next
+one by itself. Nothing to press.
+
+What it will not do is spend your recognitions while it waits. Listening to
+the *same* song again cannot produce a different answer, so the only moment
+worth spending one is after the track has changed — and there are two free
+ways to know that:
+
+- **A gap in the sound.** The silence detector already watches for this, and it
+  costs nothing.
+- **Knowing when the song ends.** Whenever the recogniser named the track — the
+  "no lyrics" case, and any later attempt — it also reported the length and how
+  far in you were. That's an exact answer to "when should I look again", for
+  free.
+
+Only a change with neither, like a crossfade into something unknown, falls back
+to a timer, and that timer is ninety seconds on purpose. A waiting session is
+capped at eight recognitions and twelve minutes, after which it stops and says
+so rather than holding the microphone open all evening.
+
+**Try now** skips the wait; **Stop** ends it.
 
 ---
 
@@ -336,6 +368,7 @@ So `npm run dev` accepts `?demo`:
 | `localhost:5173/?demo` | an English song |
 | `localhost:5173/?demo=ru` | a Russian one |
 | `localhost:5173/?demo=kk` | a Kazakh one — the case where neither reading language is the song's own |
+| `localhost:5173/?demo=waiting` | the screen shown while it waits out a song it can't use |
 
 Each drops straight into the synced view, mid-verse, with no microphone and no
 recognition spent. The words are invented — no real lyrics live in this

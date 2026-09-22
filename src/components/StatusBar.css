@@ -75,6 +75,13 @@
 }
 
 .statusbar__dot--fetching { background: var(--c-accent-deep); }
+/* Waiting is not failing. The same slow breath as listening, in the accent
+   rather than the record colour, because nothing is being recorded — it is
+   sitting with the microphone open until something it can use comes along. */
+.statusbar__dot--waiting {
+  background: var(--c-accent);
+  animation: pulse 2.6s var(--e-soft) infinite;
+}
 /* Held, not broken: the same dot as in-sync but dimmed and still, so the state
    reads as waiting rather than as a failure. */
 .statusbar__dot--paused   { background: var(--c-fg-soft); }

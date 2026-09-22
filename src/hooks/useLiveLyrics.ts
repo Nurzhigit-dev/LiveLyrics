@@ -63,6 +63,32 @@ const SECOND_OPINION_SECONDS = 8;
 /** After this long paused, let go of the microphone. */
 const RELEASE_MIC_AFTER_MS = 10 * 60 * 1000;
 
+/*
+ * Waiting out a song it can't use.
+ *
+ * A song with no match, or no lyrics on file, is not a reason to stop — the
+ * next one along will probably be fine, and being made to press Listen again
+ * every time is the opposite of an app that follows the room. So it holds on
+ * to the microphone and waits.
+ *
+ * What it must not do is burn the month's recognitions while it waits.
+ * Re-listening to the SAME song cannot produce a different answer, so the only
+ * moment worth spending one is after the track has changed — and there are two
+ * free ways to know that has happened. A gap in the sound is one. Knowing when
+ * the song ends is the other, and is exact whenever the recogniser named the
+ * track: it reported the length and how far in we were.
+ *
+ * The timer below is only the fallback for a change with neither — a crossfade
+ * into something unknown — and it is deliberately long.
+ */
+const AUTO_ATTEMPTS = 8;
+const AUTO_RETRY_SECONDS = 90;
+/** Let a new track get going before listening to it. */
+const AUTO_SETTLE_SECONDS = 3;
+/** And stop waiting altogether after this long, rather than holding the mic
+ *  open all evening in an empty room. */
+const AUTO_GIVE_UP_MS = 12 * 60 * 1000;
+
 export interface NoticeState {
   kind: string;
   title: string;
@@ -78,6 +104,21 @@ class TooQuietError extends Error {
 }
 
 const isAbort = (err: unknown) => err instanceof DOMException && err.name === 'AbortError';
+
+/**
+ * Whether a different song might succeed where this one didn't.
+ *
+ * Nothing playing, nothing recognised, or recognised with no words on file —
+ * all of those are about the track, and waiting for the next one is worth
+ * doing. A rejected key, an exhausted quota or a dead microphone are about the
+ * app, and waiting would only repeat them.
+ */
+function isSongSpecific(err: unknown): boolean {
+  if (err instanceof TooQuietError) return true;
+  if (err instanceof IdentifyError) return err.kind === 'nomatch';
+  if (err instanceof LyricsError) return err.kind === 'notfound' || err.kind === 'instrumental';
+  return false;
+}
 
 /**
  * Whether two recognitions are the same song. The recogniser's id settles it
@@ -135,6 +176,8 @@ export function useLiveLyrics() {
   const [activity, setActivity] = useState<string | null>(null);
   /** Who stopped the clock: the listener, or the room going quiet. */
   const [pausedBy, setPausedBy] = useState<'user' | 'silence' | null>(null);
+  /** True while it is holding on for a song it can actually use. */
+  const [waiting, setWaiting] = useState(false);
   /** What the app is listening through: the room, or this device's sound. */
   const [source, setSource] = useState<SourceId>('mic');
   /** Which input, when the machine offers more than one worth naming. */
@@ -154,6 +197,7 @@ export function useLiveLyrics() {
     hold: null as number | null,
     pausedBy: null as 'user' | 'silence' | null,
     source: 'mic' as SourceId,
+    waiting: false,
     inputId: loadInput(),
     /** The listener has moved this song's clock by hand. */
     corrected: false,
@@ -170,6 +214,8 @@ export function useLiveLyrics() {
   const releaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Coalesces the calibration write while the fine slider is being dragged. */
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Set while the waiting loop is asleep, so a gap in the sound can wake it. */
+  const wakeRef = useRef<(() => void) | null>(null);
 
   // A drag outranks a pause: while the timeline is being moved the clock shows
   // the dragged position, whatever else is holding it still.
@@ -197,6 +243,7 @@ export function useLiveLyrics() {
       hold: (v: number | null) => { live.current.hold = v; setHold(v); },
       pausedBy: (v: 'user' | 'silence' | null) => { live.current.pausedBy = v; setPausedBy(v); },
       source: (v: SourceId) => { live.current.source = v; setSource(v); },
+      waiting: (v: boolean) => { live.current.waiting = v; setWaiting(v); },
       adjusting: (v: boolean) => { live.current.adjusting = v; setAdjusting(v); },
       scrub: (v: number | null) => { live.current.scrub = v; setScrub(v); },
     };
@@ -226,8 +273,15 @@ export function useLiveLyrics() {
       set.phase(p);
     };
 
-    /** Turns any thrown error into a screen with a way forward. */
-    const reportError = (err: unknown, found?: Track) => {
+    /**
+     * Turns any thrown error into a screen with a way forward.
+     *
+     * `override` is how the same wording lands under "waiting" rather than
+     * "no match": what went wrong is identical, but whether the app has given
+     * up on it is not, and that is the part worth saying differently.
+     */
+    const reportError = (err: unknown, found?: Track, override?: AppPhase) => {
+      const at = (phase: AppPhase) => override ?? phase;
       if (err instanceof TooQuietError) {
         return show({
           kind: 'too quiet',
@@ -236,7 +290,7 @@ export function useLiveLyrics() {
             live.current.source === 'device'
               ? 'Nothing was playing in the tab you shared. Start the music there, then press Listen — and check the share is the tab the sound is coming from.'
               : 'Start the music first, then press Listen — and bring the device closer to the speaker.',
-        }, 'nomatch');
+        }, at('nomatch'));
       }
 
       if (err instanceof MicError) {
@@ -260,7 +314,7 @@ export function useLiveLyrics() {
             // the pipeline, so the status line should read “ready”.
           }, 'idle');
         }
-        return show({ kind: 'microphone', title: 'I can’t hear anything.', detail: err.detail.message, tone: 'danger' }, 'error');
+        return show({ kind: 'microphone', title: 'I can’t hear anything.', detail: err.detail.message, tone: 'danger' }, at('error'));
       }
 
       if (err instanceof IdentifyError) {
@@ -272,7 +326,7 @@ export function useLiveLyrics() {
               live.current.source === 'device'
                 ? 'It listened twice without a match. The sound was clean, so this is the recogniser’s catalogue rather than the audio: live takes, remixes, covers and very local releases often aren’t in it at all.'
                 : 'It listened twice without a match. Getting closer to the speaker helps far more than turning it up — and live takes, remixes and very local releases often aren’t in the recogniser’s catalogue at all.',
-          }, 'nomatch');
+          }, at('nomatch'));
         }
         const HEADINGS: Record<string, { kind: string; title: string; hint?: string }> = {
           quota: { kind: 'limit reached', title: 'Out of recognitions this month.' },
@@ -293,7 +347,7 @@ export function useLiveLyrics() {
           title: heading.title,
           detail: heading.hint ? `${err.message} ${heading.hint}` : err.message,
           tone: 'danger',
-        }, 'error');
+        }, at('error'));
       }
 
       if (err instanceof LyricsError) {
@@ -302,16 +356,16 @@ export function useLiveLyrics() {
         // recogniser's fault.
         const name = found ? `“${found.title}” by ${found.artist}` : 'This track';
         if (err.kind === 'network') {
-          return show({ kind: 'no lyrics', title: 'Couldn’t reach the lyric database.', detail: err.message }, 'nomatch');
+          return show({ kind: 'no lyrics', title: 'Couldn’t reach the lyric database.', detail: err.message }, at('nomatch'));
         }
         if (err.kind === 'instrumental') {
-          return show({ kind: 'instrumental', title: 'That’s an instrumental.', detail: `${name} has no vocals to follow.` }, 'nomatch');
+          return show({ kind: 'instrumental', title: 'That’s an instrumental.', detail: `${name} has no vocals to follow.` }, at('nomatch'));
         }
         return show({
           kind: 'no lyrics',
           title: 'Found it — but there are no words on file.',
           detail: `${name} was recognised, but LRCLIB, the free lyric database this uses, has no lyrics for it yet.`,
-        }, 'nomatch');
+        }, at('nomatch'));
       }
 
       show({
@@ -319,7 +373,7 @@ export function useLiveLyrics() {
         title: 'Something went wrong.',
         detail: err instanceof Error ? err.message : 'An unexpected error occurred.',
         tone: 'danger',
-      }, 'error');
+      }, at('error'));
     };
 
     /* ---- pause and resume ---------------------------------------------- */
@@ -382,6 +436,9 @@ export function useLiveLyrics() {
     };
 
     const handleSound = (at: number) => {
+      // A gap and then sound again is the cheapest possible signal that the
+      // track changed, and the only one that costs no recognition at all.
+      wakeRef.current?.();
       if (live.current.pausedBy !== 'silence') return;
       resume(at);
     };
@@ -496,6 +553,7 @@ export function useLiveLyrics() {
     const applySong = (top: Track, record: LrclibRecord, startedAt: number) => {
       // A new song has never been corrected, whatever the last one needed.
       live.current.corrected = false;
+      set.waiting(false);
       setNotice(null);
       setCaption(null);
       setActivity(null);
@@ -529,7 +587,10 @@ export function useLiveLyrics() {
         applySong(id.track, await findLyrics(lyricTarget(id), signal), snap.startedAt);
       } catch (err) {
         if (isAbort(err)) throw err;
-        // Better to say what's playing than leave the old song's words scrolling.
+        // Better to say what's playing than leave the old song's words
+        // scrolling — and if the trouble is only this track, keep listening
+        // rather than ending the session over it.
+        if (isSongSpecific(err)) return void keepListening(err, id.track);
         closeMic();
         reportError(err, id.track);
       }
@@ -627,6 +688,152 @@ export function useLiveLyrics() {
       }
     };
 
+    /**
+     * Sleeps until something suggests the track has changed, or `seconds` pass.
+     *
+     * The sleep is what makes this cheap: nothing is sent to the recogniser
+     * while it lasts. A gap in the sound cuts it short through `wakeRef`.
+     */
+    const sleepUntilChange = (seconds: number, signal: AbortSignal) =>
+      new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const cleanup = () => {
+          clearTimeout(timer);
+          if (wakeRef.current === wake) wakeRef.current = null;
+          signal.removeEventListener('abort', onAbort);
+        };
+        const wake = () => { if (settled) return; settled = true; cleanup(); resolve(); };
+        const onAbort = () => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(new DOMException('Cancelled', 'AbortError'));
+        };
+        const timer = setTimeout(wake, Math.max(1, seconds) * 1000);
+        wakeRef.current = wake;
+        signal.addEventListener('abort', onAbort, { once: true });
+      });
+
+    /** How long until a known track ends, when we know enough to say. */
+    const untilEndOf = (track?: Track | null): number | null => {
+      if (!track?.duration || track.offset === undefined) return null;
+      const left = track.duration - track.offset + AUTO_SETTLE_SECONDS;
+      return left > AUTO_SETTLE_SECONDS + 2 ? left : null;
+    };
+
+    /**
+     * Hold on through a song it can't use, and pick up the next one by itself.
+     *
+     * This is what stops a track with no match — or no lyrics on file — from
+     * ending the session and leaving a button to press. The microphone stays
+     * open, the screen says what happened and that it is still going, and the
+     * loop waits for the track to change before spending anything.
+     */
+    const keepListening = async (reason: unknown, found?: Track) => {
+      bgRef.current?.abort();
+      const ctrl = new AbortController();
+      bgRef.current = ctrl;
+      const { signal } = ctrl;
+      const mic = micRef.current;
+      if (!mic) return reportError(reason, found);
+
+      reportError(reason, found, 'waiting');
+      set.waiting(true);
+      set.lines([]);
+      set.anchor(null);
+      set.hold(null);
+
+      // Monotonic, so putting the laptop to sleep or the clock changing under
+      // us can't end the wait early or make it last all night.
+      // oxlint-disable-next-line react/purity
+      const deadline = performance.now() + AUTO_GIVE_UP_MS;
+      // First wait: exactly as long as the song we can't use has left, when
+      // the recogniser told us enough to work that out.
+      let nextWait = untilEndOf(found);
+      let spent = 0;
+
+      try {
+        // oxlint-disable-next-line react/purity
+        while (spent < AUTO_ATTEMPTS && performance.now() < deadline) {
+          await sleepUntilChange(nextWait ?? AUTO_RETRY_SECONDS, signal);
+          nextWait = null;
+
+          await mic.waitUntil(mic.secondsCaptured + SAMPLE_SECONDS, signal);
+          const snap = await mic.snapshot(SAMPLE_SECONDS);
+          // An empty room costs nothing and doesn't count against the tries.
+          if (snap.rms < MIN_AUDIBLE_RMS) continue;
+
+          spent++;
+          setActivity('listening for a song');
+          let id: Identification;
+          try {
+            id = await identify(snap.wav, signal);
+          } catch (err) {
+            if (isAbort(err)) throw err;
+            if (err instanceof IdentifyError && err.kind === 'nomatch') {
+              reportError(err, undefined, 'waiting');
+              continue;
+            }
+            // A key, a quota or the network: waiting would only repeat it.
+            set.waiting(false);
+            closeMic();
+            return reportError(err);
+          } finally {
+            setActivity(null);
+          }
+
+          // Still the same song we couldn't use. Nothing has changed yet — but
+          // that recognition was not wasted: it came back with the length and
+          // how far in we are, so the next wait can be exactly what is left of
+          // it rather than another guess.
+          if (found && sameSong(id.track, found)) {
+            found = id.track;
+            nextWait = untilEndOf(found);
+            continue;
+          }
+
+          try {
+            setActivity('new song');
+            applySong(id.track, await findLyrics(lyricTarget(id), signal), snap.startedAt);
+            return;
+          } catch (err) {
+            if (isAbort(err)) throw err;
+            if (!isSongSpecific(err)) {
+              set.waiting(false);
+              closeMic();
+              return reportError(err, id.track);
+            }
+            // Now we know what this one is, so we know when it ends.
+            found = id.track;
+            nextWait = untilEndOf(found);
+            reportError(err, found, 'waiting');
+          } finally {
+            setActivity(null);
+          }
+        }
+
+        set.waiting(false);
+        closeMic();
+        show({
+          kind: 'stopped',
+          title: 'Stopped listening.',
+          detail: 'Nothing it could use came along. Press Listen whenever you want it to try again.',
+          // 'idle', not 'nomatch': it stopped of its own accord and is ready
+          // to go again, which is not the same as having just failed at one.
+        }, 'idle');
+      } catch (err) {
+        if (isAbort(err)) return;
+        set.waiting(false);
+        closeMic();
+        reportError(err);
+      } finally {
+        if (bgRef.current === ctrl) {
+          bgRef.current = null;
+          setActivity(null);
+        }
+      }
+    };
+
     /** The song has run past its end: find out what's playing now. */
     const listenForNext = async () => {
       bgRef.current?.abort();
@@ -662,8 +869,9 @@ export function useLiveLyrics() {
           }
           return await switchSong(id, snap, signal);
         }
-        // Nothing recognisable followed. The last song stays on screen.
-        closeMic();
+        // Nothing recognisable followed. The words on screen belong to a song
+        // that has finished, so they come down — but the session doesn't end.
+        return void keepListening(new IdentifyError('Heard the audio, but matched nothing.', 'nomatch'));
       } catch (err) {
         if (!isAbort(err)) console.warn('Listening for the next song failed', err);
       } finally {
@@ -688,6 +896,7 @@ export function useLiveLyrics() {
       setCaption(null);
       setActivity(null);
       clearReleaseTimer();
+      set.waiting(false);
       set.hold(null);
       set.anchor(null);
       set.phase('listening');
@@ -711,6 +920,9 @@ export function useLiveLyrics() {
         applySong(id.track, await findLyrics(lyricTarget(id), signal), snap.startedAt);
       } catch (err) {
         if (signal.aborted || isAbort(err)) return;
+        // A song it can't use is not the end of the session: hold on to the
+        // microphone and pick up whatever comes next on its own.
+        if (micRef.current && isSongSpecific(err)) return void keepListening(err, found);
         closeMic();
         reportError(err, found);
       } finally {
@@ -726,6 +938,7 @@ export function useLiveLyrics() {
       closeMic();
       setCaption(null);
       setActivity(null);
+      set.waiting(false);
       set.hold(null);
       set.phase('idle');
     };
@@ -842,6 +1055,15 @@ export function useLiveLyrics() {
       // bundler still sees a reachable dynamic import and emits the demo as a
       // chunk in `dist` — never fetched, but shipped.
       if (!import.meta.env.DEV) return;
+
+      /* The one screen the demo song can't reach: a track it couldn't use,
+         with the app still listening for the next one. The loop behind it
+         needs real audio, so this shows the state without running it. */
+      if (id === 'waiting') {
+        set.waiting(true);
+        return reportError(new IdentifyError('Heard the audio, but matched nothing.', 'nomatch'), undefined, 'waiting');
+      }
+
       const { demoSong } = await import('../lib/demo');
       const song = demoSong(id);
       setNotice(null);
@@ -933,6 +1155,8 @@ export function useLiveLyrics() {
     busy,
     paused: phase === 'paused',
     pausedBy,
+    /** True while it is holding on for a song it can use, all by itself. */
+    waiting,
     /** The room, or this device's own sound. */
     source,
     /** Whether this browser can share a tab's audio at all. */

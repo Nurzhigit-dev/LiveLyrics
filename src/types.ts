@@ -15,6 +15,7 @@ export type AppPhase =
   | 'synced'       // lyrics are on screen and scrolling with the song
   | 'paused'       // the room went quiet; the clock is held until sound returns
   | 'nomatch'      // heard something, recognised nothing
+  | 'waiting'      // nothing it could use; holding on for the next song
   | 'error';       // mic denied, offline, bad key, etc.
 
 /** A track, once we know what it is. */

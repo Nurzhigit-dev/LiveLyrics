@@ -172,8 +172,20 @@ export default function App() {
           title={notice.title}
           detail={notice.detail}
           tone={notice.tone}
-          action={{ label: busy ? 'Listening…' : 'Try again', onClick: retry }}
-          secondary={{ label: 'Start over', onClick: lyrics.reset }}
+          /* While it is waiting the buttons mean different things: one skips
+             the wait, the other calls the whole thing off. Offering "Try
+             again" next to a thing that is already trying again would be a
+             lie about what is happening. */
+          status={
+            lyrics.waiting
+              ? 'Still listening — it will pick up the next song on its own'
+              : undefined
+          }
+          action={{
+            label: busy ? 'Listening…' : lyrics.waiting ? 'Try now' : 'Try again',
+            onClick: retry,
+          }}
+          secondary={{ label: lyrics.waiting ? 'Stop' : 'Start over', onClick: lyrics.reset }}
         />
       ) : (
         <Stage
